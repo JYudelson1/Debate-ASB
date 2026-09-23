@@ -1,0 +1,1 @@
+You have read-only access to the trajectory (the agent's task, the actions it took, and what they returned) through three tools: `list_steps`, `read_step` and `search_trajectory`. You can make up to {max_steps} rounds of tool calls per turn.

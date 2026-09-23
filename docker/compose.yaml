@@ -1,0 +1,8 @@
+services:
+  default:
+    build: .
+    image: debate-asb-sandbox
+    command: tail -f /dev/null
+    init: true
+    network_mode: none  # untrusted code: no network
+    stop_grace_period: 1s
