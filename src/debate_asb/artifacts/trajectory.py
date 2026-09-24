@@ -22,7 +22,12 @@ from inspect_ai.log import read_eval_log_sample
 from inspect_ai.model import ChatMessage, ChatMessageAssistant, ChatMessageTool
 from pydantic import TypeAdapter
 
-from debate_asb.artifacts.base import Artifact, ArtifactTooLarge, estimate_tokens, primitive
+from debate_asb.artifacts.base import (
+    Artifact,
+    ArtifactTooLarge,
+    estimate_tokens,
+    primitive,
+)
 
 View = Literal["full", "output_only"]
 MAX_STEP_CHARS = 20_000
@@ -40,7 +45,9 @@ class Trajectory(Artifact):
         sample_uuid: str | None = None,
     ):
         if messages is None:
-            sample = read_eval_log_sample(eval_log, uuid=sample_uuid, resolve_attachments=True)
+            sample = read_eval_log_sample(
+                eval_log, uuid=sample_uuid, resolve_attachments=True
+            )
             messages = sample.messages
         messages = _MESSAGES.validate_python(messages)
         self.view = view
@@ -59,10 +66,14 @@ class Trajectory(Artifact):
             step: Step number, as shown by list_steps.
         """
         if not 0 <= step < len(self.steps):
-            raise ValueError(f"No step {step}; the trajectory has steps 0-{len(self.steps) - 1}")
+            raise ValueError(
+                f"No step {step}; the trajectory has steps 0-{len(self.steps) - 1}"
+            )
         text = _render(self.steps[step])
         if len(text) > MAX_STEP_CHARS:
-            text = text[:MAX_STEP_CHARS] + f"\n[... step truncated, {len(text):,} chars]"
+            text = (
+                text[:MAX_STEP_CHARS] + f"\n[... step truncated, {len(text):,} chars]"
+            )
         return text
 
     @primitive
@@ -74,14 +85,22 @@ class Trajectory(Artifact):
             ignore_case: Case-insensitive matching.
         """
         regex = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
-        hits = [f"step {i}: {_summary(m)}" for i, m in enumerate(self.steps) if regex.search(_render(m))]
+        hits = [
+            f"step {i}: {_summary(m)}"
+            for i, m in enumerate(self.steps)
+            if regex.search(_render(m))
+        ]
         return "\n".join(hits) or "No matches."
 
     def dump_all(self, max_tokens: int) -> str:
-        dump = "\n\n".join(f"===== step {i} =====\n{_render(m)}" for i, m in enumerate(self.steps))
+        dump = "\n\n".join(
+            f"===== step {i} =====\n{_render(m)}" for i, m in enumerate(self.steps)
+        )
         tokens = estimate_tokens(dump)
         if tokens > max_tokens:
-            raise ArtifactTooLarge(f"trajectory dump is ~{tokens:,} tokens, over {max_tokens:,}")
+            raise ArtifactTooLarge(
+                f"trajectory dump is ~{tokens:,} tokens, over {max_tokens:,}"
+            )
         return dump
 
 

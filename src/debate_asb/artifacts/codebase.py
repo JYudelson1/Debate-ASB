@@ -12,7 +12,12 @@ from pathlib import Path
 
 from inspect_ai.util import sandbox
 
-from debate_asb.artifacts.base import Artifact, ArtifactTooLarge, estimate_tokens, primitive
+from debate_asb.artifacts.base import (
+    Artifact,
+    ArtifactTooLarge,
+    estimate_tokens,
+    primitive,
+)
 
 # ASB ships a CLAUDE.md (instructions for Claude Code auditors) in each codebase.
 # Participants get that context through their prompts instead, so it's hidden here.
@@ -61,7 +66,9 @@ class Codebase(Artifact):
                 if p.name in HIDDEN_NAMES:
                     continue
                 if p.is_dir():
-                    lines.append(f"{p.relative_to(self.root)}/  ({len(self._files(p))} files)")
+                    lines.append(
+                        f"{p.relative_to(self.root)}/  ({len(self._files(p))} files)"
+                    )
                 else:
                     lines.append(self._describe(p))
         if len(lines) > MAX_LIST_ENTRIES:
@@ -89,13 +96,18 @@ class Codebase(Artifact):
         for n in range(start, end):
             line = all_lines[n - 1]
             if len(line) > MAX_LINE_CHARS:
-                line = line[:MAX_LINE_CHARS] + f" [... line truncated, {len(line):,} chars]"
+                line = (
+                    line[:MAX_LINE_CHARS]
+                    + f" [... line truncated, {len(line):,} chars]"
+                )
             out.append(f"{n:>6}  {line}")
         out.append(f"[{path}: showed lines {start}-{end - 1} of {len(all_lines)}]")
         return "\n".join(out)
 
     @primitive
-    def search(self, pattern: str, directory: str = ".", ignore_case: bool = False) -> str:
+    def search(
+        self, pattern: str, directory: str = ".", ignore_case: bool = False
+    ) -> str:
         """Search text files in the codebase for a regular expression (like grep -rn).
 
         Args:
@@ -133,7 +145,9 @@ class Codebase(Artifact):
             (included if dumpable else excluded).append(file)
         # Paper and README first: they're what the rest is read against.
         first = [self.root / "PAPER.md", self.root / "README.md"]
-        included = [f for f in first if f in included] + [f for f in included if f not in first]
+        included = [f for f in first if f in included] + [
+            f for f in included if f not in first
+        ]
 
         parts = [
             f"The codebase has {len(included) + len(excluded)} files. The {len(included)} "
@@ -142,7 +156,9 @@ class Codebase(Artifact):
             "listed by name at the end but not included."
         ]
         for file in included:
-            parts.append(f"===== {file.relative_to(self.root)} =====\n{file.read_text(errors='replace')}")
+            parts.append(
+                f"===== {file.relative_to(self.root)} =====\n{file.read_text(errors='replace')}"
+            )
         parts.append("===== Files not included =====\n" + self._summarize(excluded))
         dump = "\n\n".join(parts)
 
@@ -168,13 +184,21 @@ class Codebase(Artifact):
         """
         try:
             result = await sandbox().exec(
-                ["bash", "-c", command], cwd=WORKSPACE, user=SANDBOX_USER, timeout=COMMAND_TIMEOUT_SECONDS
+                ["bash", "-c", command],
+                cwd=WORKSPACE,
+                user=SANDBOX_USER,
+                timeout=COMMAND_TIMEOUT_SECONDS,
             )
         except TimeoutError:
             return f"Command killed after {COMMAND_TIMEOUT_SECONDS} seconds."
-        output = result.stdout + (f"\n[stderr]\n{result.stderr}" if result.stderr else "")
+        output = result.stdout + (
+            f"\n[stderr]\n{result.stderr}" if result.stderr else ""
+        )
         if len(output) > MAX_OUTPUT_CHARS:
-            output = output[:MAX_OUTPUT_CHARS] + f"\n[... output truncated, {len(output):,} chars]"
+            output = (
+                output[:MAX_OUTPUT_CHARS]
+                + f"\n[... output truncated, {len(output):,} chars]"
+            )
         return f"[exit code {result.returncode}]\n{output}"
 
     # --- helpers ---

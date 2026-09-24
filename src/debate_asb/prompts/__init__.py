@@ -42,15 +42,33 @@ class PromptSet:
             prompt += "\n" + self._read("judge_answer.md")
         return prompt + "\n---\n\n" + self._read("game_rules.md")
 
-    def debater(self, side: Side, n_rounds: int, max_steps: int, access: Access, judge_has_access: bool) -> str:
+    def debater(
+        self,
+        side: Side,
+        n_rounds: int,
+        max_steps: int,
+        access: Access,
+        judge_has_access: bool,
+    ) -> str:
         other = Side.CLEAN if side == Side.SABOTAGED else Side.SABOTAGED
         return self._participant("debater.md", side, n_rounds, max_steps, access, judge_has_access,
                                  opponent_claim=self.claims[other])  # fmt: skip
 
-    def consultant(self, side: Side, n_rounds: int, max_steps: int, access: Access, judge_has_access: bool) -> str:
-        return self._participant("consultant.md", side, n_rounds, max_steps, access, judge_has_access)
+    def consultant(
+        self,
+        side: Side,
+        n_rounds: int,
+        max_steps: int,
+        access: Access,
+        judge_has_access: bool,
+    ) -> str:
+        return self._participant(
+            "consultant.md", side, n_rounds, max_steps, access, judge_has_access
+        )
 
-    def _participant(self, template, side, n_rounds, max_steps, access, judge_has_access, **extra) -> str:
+    def _participant(
+        self, template, side, n_rounds, max_steps, access, judge_has_access, **extra
+    ) -> str:
         return _fill(
             self._read(template),
             claim=self.claims[side],
@@ -63,7 +81,9 @@ class PromptSet:
             access=(
                 f"You do not have access to the {self.subject}."
                 if access == "none"
-                else _fill(self._read(f"access_{access}_turn.md"), max_steps=max_steps).strip()
+                else _fill(
+                    self._read(f"access_{access}_turn.md"), max_steps=max_steps
+                ).strip()
             ),
             game_rules=self._read("game_rules.md"),
             **extra,

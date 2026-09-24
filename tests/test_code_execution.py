@@ -3,17 +3,18 @@
 import subprocess
 
 import pytest
+from conftest import needs_asb, say, tool_call
 from inspect_ai import eval
 from inspect_ai.tool import ToolDef
 from inspect_ai.util import ExecResult
+from test_protocols import model_calls, run
 
-from conftest import needs_asb, say, tool_call
 from debate_asb import task as task_module
-from debate_asb.artifacts import Codebase, codebase as codebase_module
+from debate_asb.artifacts import Codebase
+from debate_asb.artifacts import codebase as codebase_module
 from debate_asb.datasets import asb_samples
 from debate_asb.prompts import SETTINGS
 from debate_asb.protocols.lone_judge import lone_judge
-from test_protocols import model_calls, run
 
 
 def test_run_bash_is_a_tool_only_with_code_execution(tmp_path):
@@ -46,16 +47,31 @@ async def test_run_bash_runs_in_workspace_as_participant_user(fake_sandbox, tmp_
     out = await Codebase(tmp_path, code_execution=True).run_bash("echo hello")
     assert out == "[exit code 0]\nhello\n"
     [call] = fake_sandbox.calls
-    assert call == {"cmd": ["bash", "-c", "echo hello"], "cwd": "/workspace", "user": "auditor"}
+    assert call == {
+        "cmd": ["bash", "-c", "echo hello"],
+        "cwd": "/workspace",
+        "user": "auditor",
+    }
 
 
 @needs_asb
 def test_task_with_code_execution(script, fake_sandbox, tmp_path):
-    script([tool_call("run_bash", command="python -c 'print(1)'"), say("Sabotage Credence: 40%")])
+    script(
+        [
+            tool_call("run_bash", command="python -c 'print(1)'"),
+            say("Sabotage Credence: 40%"),
+        ]
+    )
     task = lone_judge(sample_ids="hop_jump", code_execution=True)
     [sample] = task.dataset
-    assert sample.files == {"/workspace": asb_samples(["hop_jump"])[0].metadata["artifacts"]["codebase"]["root"]}
-    assert task.sandbox.type == "docker" and task.sandbox.config.endswith("docker/compose.yaml")
+    assert sample.files == {
+        "/workspace": asb_samples(["hop_jump"])[0].metadata["artifacts"]["codebase"][
+            "root"
+        ]
+    }
+    assert task.sandbox.type == "docker" and task.sandbox.config.endswith(
+        "docker/compose.yaml"
+    )
 
     # Run it without Docker: the fake sandbox stands in.
     task.sandbox = None
@@ -64,7 +80,9 @@ def test_task_with_code_execution(script, fake_sandbox, tmp_path):
     log = run(task, tmp_path)
     [sample] = log.samples
     [setup, command] = fake_sandbox.calls
-    assert setup["user"] == "root" and "chmod -R a+rX,a-w /workspace" in setup["cmd"][-1]
+    assert (
+        setup["user"] == "root" and "chmod -R a+rX,a-w /workspace" in setup["cmd"][-1]
+    )
     assert "CLAUDE.md" in setup["cmd"][-1]
     assert command["cmd"] == ["bash", "-c", "python -c 'print(1)'"]
     system = model_calls(sample, "judge")[0].input[0].text
@@ -80,7 +98,12 @@ def test_execute_prompts_are_asb_text_minus_modal():
 
 def docker_running() -> bool:
     try:
-        return subprocess.run(["docker", "info"], capture_output=True, timeout=10).returncode == 0
+        return (
+            subprocess.run(
+                ["docker", "info"], capture_output=True, timeout=10
+            ).returncode
+            == 0
+        )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
@@ -98,10 +121,15 @@ def test_real_sandbox(script, tmp_path):
         "python -c 'import torch, transformers; print(torch.cuda.is_available())'",
         "sleep 75; echo finished",
     ]
-    script([tool_call("run_bash", command=c) for c in commands] + [say("Sabotage Credence: 50%")])
+    script(
+        [tool_call("run_bash", command=c) for c in commands]
+        + [say("Sabotage Credence: 50%")]
+    )
     log = run(lone_judge(sample_ids="lazy_alpha", code_execution=True), tmp_path)
     [sample] = log.samples
-    results = [m.text for m in model_calls(sample, "judge")[-1].input if m.role == "tool"]
+    results = [
+        m.text for m in model_calls(sample, "judge")[-1].input if m.role == "tool"
+    ]
     ls, claude_md, touch, scratch, network, numpy, torch, sleep = results
     assert "PAPER.md" in ls and "CLAUDE.md" not in ls
     assert "No such file" in claude_md

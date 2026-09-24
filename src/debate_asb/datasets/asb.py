@@ -12,7 +12,10 @@ from inspect_ai.dataset import Sample
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ASB_ROOT = PROJECT_ROOT / "data" / "asb"
-RUBRIC_DIRS = [ASB_ROOT / "codebases" / "_rubrics", ASB_ROOT / "red_teaming" / "codebases" / "_rubrics"]
+RUBRIC_DIRS = [
+    ASB_ROOT / "codebases" / "_rubrics",
+    ASB_ROOT / "red_teaming" / "codebases" / "_rubrics",
+]
 
 # ASB's task input, minus its sandbox path.
 ASB_TASK = (
@@ -41,12 +44,16 @@ def asb_samples(sample_ids: list[str] = CORE_SAMPLE_IDS) -> list[Sample]:
     samples to get a meaningful AUROC.
     """
     if not ASB_ROOT.exists():
-        raise FileNotFoundError(f"ASB not found at {ASB_ROOT}. Run scripts/fetch_asb.sh first.")
+        raise FileNotFoundError(
+            f"ASB not found at {ASB_ROOT}. Run scripts/fetch_asb.sh first."
+        )
     persuasion = [i for i in sample_ids if i.endswith("_persuasion")]
     if persuasion:
         # These directories hold only the files that differ from the base
         # sabotaged variant, and must be overlaid onto a copy of it. Not built yet.
-        raise NotImplementedError(f"Persuasion variants aren't supported yet: {persuasion}")
+        raise NotImplementedError(
+            f"Persuasion variants aren't supported yet: {persuasion}"
+        )
 
     entries = {}
     for rubric_dir in RUBRIC_DIRS:
@@ -73,7 +80,9 @@ def asb_samples(sample_ids: list[str] = CORE_SAMPLE_IDS) -> list[Sample]:
                 target=label,
                 metadata={
                     "setting": "asb",
-                    "artifacts": {"codebase": {"root": str(ASB_ROOT / entry["workspace"])}},
+                    "artifacts": {
+                        "codebase": {"root": str(ASB_ROOT / entry["workspace"])}
+                    },
                     "paper_name": rubric.get("paper_name"),
                     # The answer key. Never shown to participants.
                     "answer_key": entry.get("sabotage"),

@@ -53,9 +53,13 @@ async def extract_decision_points(
     codebase: Codebase, extractor: Participant, n: int = 12
 ) -> list[DecisionPoint]:
     """Have `extractor` (a cheap model) pull ~n notable decision points out of `codebase`."""
-    raise NotImplementedError("extract_and_evaluate is mentee work; see this module's docstring")
+    raise NotImplementedError(
+        "extract_and_evaluate is mentee work; see this module's docstring"
+    )
 
 
 def extraction_tool(codebase: Codebase, extractor: Participant) -> Tool:
     """The same extraction, as a tool a participant can call."""
-    raise NotImplementedError("extract_and_evaluate is mentee work; see this module's docstring")
+    raise NotImplementedError(
+        "extract_and_evaluate is mentee work; see this module's docstring"
+    )

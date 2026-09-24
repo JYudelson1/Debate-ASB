@@ -19,7 +19,14 @@ from inspect_ai.model import ChatMessageSystem, ChatMessageUser
 
 from debate_asb.datasets import Dataset, load_samples
 from debate_asb.models import DEFAULT_MODEL, DEFAULT_PROVIDER, ModelSpec, Participant
-from debate_asb.protocol import AuditSample, ProtocolResult, ToolAccess, ToolSet, generate, get_credence
+from debate_asb.protocol import (
+    AuditSample,
+    ProtocolResult,
+    ToolAccess,
+    ToolSet,
+    generate,
+    get_credence,
+)
 from debate_asb.task import protocol_task
 
 # Room left in the context window for the judge's answer (fixes, explanation, credence).
@@ -36,12 +43,16 @@ class FullContextJudge:
         max_tokens = self.judge.model.context_length() - OUTPUT_RESERVE_TOKENS
         contents = sample.dump_all(max_tokens)
         messages = [
-            ChatMessageSystem(content=self.judge.system_prompt or sample.prompts.judge("full_context")),
+            ChatMessageSystem(
+                content=self.judge.system_prompt or sample.prompts.judge("full_context")
+            ),
             ChatMessageUser(content=f"{sample.task}\n\n{contents}"),
         ]
 
         await generate(self.judge, "judge", messages)
-        return ProtocolResult(credence=await get_credence(self.judge, "judge", messages))
+        return ProtocolResult(
+            credence=await get_credence(self.judge, "judge", messages)
+        )
 
 
 @task

@@ -6,7 +6,9 @@ from debate_asb import models
 from debate_asb.models import ModelSpec
 
 
-def endpoint(tag, name, prompt="0.000002", completion="0.000012", quantization="unknown"):
+def endpoint(
+    tag, name, prompt="0.000002", completion="0.000012", quantization="unknown"
+):
     return {"tag": tag, "provider_name": name, "quantization": quantization, "context_length": 1_000_000,
             "pricing": {"prompt": prompt, "completion": completion}}  # fmt: skip
 
@@ -21,7 +23,9 @@ def canned_endpoints(monkeypatch):
         endpoint("deepinfra", "DeepInfra", quantization="bf16"),
         endpoint("deepinfra/turbo", "DeepInfra", quantization="fp8"),
     ]
-    monkeypatch.setattr(models, "_openrouter_get", lambda path, key=None: {"endpoints": listing})
+    monkeypatch.setattr(
+        models, "_openrouter_get", lambda path, key=None: {"endpoints": listing}
+    )
     models._lookup_endpoint.cache_clear()
 
 

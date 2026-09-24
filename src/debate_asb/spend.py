@@ -56,11 +56,15 @@ class Spend:
 
 def sample_spend(events: list) -> Spend:
     roles = {
-        e.id: e.name for e in events if isinstance(e, SpanBeginEvent) and e.type == "participant"
+        e.id: e.name
+        for e in events
+        if isinstance(e, SpanBeginEvent) and e.type == "participant"
     }
     spend = Spend()
     for event in events:
-        if not isinstance(event, ModelEvent) or not event.model.startswith("openrouter/"):
+        if not isinstance(event, ModelEvent) or not event.model.startswith(
+            "openrouter/"
+        ):
             continue
         if event.cache == "read":
             spend.cache_hits += 1
@@ -73,7 +77,9 @@ def sample_spend(events: list) -> Spend:
         response = event.call.response or {}
         role = roles.get(event.span_id, UNATTRIBUTED)
         spend.by_role[role] += (response.get("usage") or {}).get("cost") or 0.0
-        pin = request.get("provider") or (request.get("extra_body") or {}).get("provider")
+        pin = request.get("provider") or (request.get("extra_body") or {}).get(
+            "provider"
+        )
         if not pin:
             spend.unpinned_calls += 1
             continue
@@ -95,7 +101,9 @@ def spend_problems(spend: Spend) -> list[str]:
     for (model, pinned, served), n in spend.served_by.items():
         expected = ModelSpec(model, pinned).provider_name()
         if served != expected:
-            problems.append(f"{n} call(s) to {model} pinned to {pinned} were served by {served}")
+            problems.append(
+                f"{n} call(s) to {model} pinned to {pinned} were served by {served}"
+            )
     if spend.unlogged_calls:
         problems.append(
             f"{spend.unlogged_calls} call(s) have no logged response, so real spend is "

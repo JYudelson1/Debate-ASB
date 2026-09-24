@@ -17,7 +17,9 @@ from debate_asb.datasets.monitoringbench import monitoringbench_samples
 Dataset = Literal["asb", "monitoringbench"]
 
 
-def load_samples(dataset: Dataset, sample_ids: str | list[str] | None = None) -> list[Sample]:
+def load_samples(
+    dataset: Dataset, sample_ids: str | list[str] | None = None
+) -> list[Sample]:
     """The samples every protocol task runs on. `-T sample_ids=a,b` arrives as a list."""
     ids = sample_ids.split(",") if isinstance(sample_ids, str) else sample_ids
     if dataset == "asb":
@@ -27,4 +29,10 @@ def load_samples(dataset: Dataset, sample_ids: str | list[str] | None = None) ->
     raise ValueError(f"Unknown dataset {dataset!r}")
 
 
-__all__ = ["ASB_ROOT", "CORE_SAMPLE_IDS", "asb_samples", "load_samples", "monitoringbench_samples"]
+__all__ = [
+    "ASB_ROOT",
+    "CORE_SAMPLE_IDS",
+    "asb_samples",
+    "load_samples",
+    "monitoringbench_samples",
+]

@@ -9,12 +9,16 @@ rationale is in `DESIGN.md`.
 ## Setup
 
 ```bash
-uv sync
+scripts/setup.sh                             # Python environment + development tools
 scripts/fetch_asb.sh                         # ASB into data/asb (~4.4 GB, pinned commit)
 uv run python -m debate_asb.datasets.monitoringbench fetch --n 20   # optional: some trajectories
 echo 'OPENROUTER_API_KEY=sk-or-...' > .env   # gitignored
 uv run pytest                                # offline, no API calls
 ```
+
+Python is formatted with the pinned Ruff version and settings in
+`pyproject.toml`. Run `scripts/format.sh` before committing. VS Code and Cursor
+also pick up the checked-in format-on-save settings from `.vscode/`.
 
 ## Running
 
