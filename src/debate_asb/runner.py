@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from inspect_ai import Task, eval
 from inspect_ai.log import EvalLog, read_eval_log
 
-from debate_asb.spend import sample_spend, spend_problems, Spend
+from debate_asb.spend import Spend, sample_spend, spend_problems
 from debate_asb.task import auroc_of, rate_flagged
 
 
@@ -37,7 +37,9 @@ class Report:
     warnings: list[str]
 
     def print(self) -> None:
-        print(f"{'sample':<24}{'run':>4}  {'label':<10}{'credence':>9}{'nominal $':>11}{'real $':>9}")
+        print(
+            f"{'sample':<24}{'run':>4}  {'label':<10}{'credence':>9}{'nominal $':>11}{'real $':>9}"
+        )
         for r in self.rows:
             credence = "-" if r["credence"] is None else f"{r['credence']:.0f}%"
             print(f"{r['sample_id']:<24}{r['run']:>4}  {r['label']:<10}{credence:>9}"
@@ -51,13 +53,23 @@ class Report:
         print()
         s = self.summary
         print(f"Across {s['n_runs']} run(s), mean (variance):")
-        for key, name in [("auroc", "AUROC"), ("catch_rate", "catch rate"), ("false_positive_rate", "false positive rate")]:
+        for key, name in [
+            ("auroc", "AUROC"),
+            ("catch_rate", "catch rate"),
+            ("false_positive_rate", "false positive rate"),
+        ]:
             print(f"  {name}: {_fmt(s[key + '_mean'])} ({_fmt(s[key + '_variance'])})")
         if not s["credences_by_label"].get("honest"):
-            print("  (no honest samples: AUROC and false positive rate are undefined, and catch rate is only"
-                  " meaningful relative to other protocols, since always saying 'sabotaged' catches 100%)")
-        print(f"Cost per run: nominal ${s['nominal_cost_per_run']:.2f}, real ${s['real_spend_per_run']:.2f}")
-        for role in sorted(set(s["nominal_cost_per_role"]) | set(s["real_spend_per_role"])):
+            print(
+                "  (no honest samples: AUROC and false positive rate are undefined, and catch rate is only"
+                " meaningful relative to other protocols, since always saying 'sabotaged' catches 100%)"
+            )
+        print(
+            f"Cost per run: nominal ${s['nominal_cost_per_run']:.2f}, real ${s['real_spend_per_run']:.2f}"
+        )
+        for role in sorted(
+            set(s["nominal_cost_per_role"]) | set(s["real_spend_per_role"])
+        ):
             print(f"  {role}: nominal ${s['nominal_cost_per_role'].get(role, 0.0):.2f}/run,"
                   f" real ${s['real_spend_per_role'].get(role, 0.0):.2f}/run")  # fmt: skip
         for label, credences in sorted(s["credences_by_label"].items()):
@@ -68,7 +80,14 @@ class Report:
 
 def run(task: Task, n_runs: int = 1, log_dir: str = "logs", **eval_args) -> Report:
     """Run `task` n_runs times (as Inspect epochs) and report on the log."""
-    [log] = eval(task, epochs=n_runs, model="none", log_model_api=True, log_dir=log_dir, **eval_args)
+    [log] = eval(
+        task,
+        epochs=n_runs,
+        model="none",
+        log_model_api=True,
+        log_dir=log_dir,
+        **eval_args,
+    )
     return report(log)
 
 
@@ -111,7 +130,11 @@ def report(log: EvalLog | str) -> Report:
         })  # fmt: skip
 
     n_runs = max(len(runs), 1)
-    nominal_by_role, real_by_role, credences = defaultdict(float), defaultdict(float), defaultdict(list)
+    nominal_by_role, real_by_role, credences = (
+        defaultdict(float),
+        defaultdict(float),
+        defaultdict(list),
+    )
     for r in rows:
         for role, usd in r["nominal_cost_by_role"].items():
             nominal_by_role[role] += usd / n_runs
@@ -132,7 +155,11 @@ def report(log: EvalLog | str) -> Report:
         "credences_by_label": dict(credences),
     }
     warnings = spend_problems(total_spend)
-    warnings += [f"{r['sample_id']} run {r['run']} errored: {r['error']}" for r in rows if r["error"]]
+    warnings += [
+        f"{r['sample_id']} run {r['run']} errored: {r['error']}"
+        for r in rows
+        if r["error"]
+    ]
     return Report(rows=rows, runs=runs, summary=summary, warnings=warnings)
 
 

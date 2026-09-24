@@ -182,7 +182,9 @@ def check_openrouter_account() -> None:
         key = _openrouter_get("/key", api_key)
         credits = _openrouter_get("/credits", api_key)
     except urllib.error.HTTPError as e:
-        raise OpenRouterAccountError(f"OpenRouter rejected the key: HTTP {e.code}") from e
+        raise OpenRouterAccountError(
+            f"OpenRouter rejected the key: HTTP {e.code}"
+        ) from e
 
     if key.get("limit") is not None and key.get("limit_remaining", 1) <= 0:
         raise OpenRouterAccountError(

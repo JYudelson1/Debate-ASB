@@ -14,7 +14,15 @@ from inspect_ai.model import ChatMessageSystem, ChatMessageUser
 
 from debate_asb.datasets import Dataset, load_samples
 from debate_asb.models import DEFAULT_MODEL, DEFAULT_PROVIDER, ModelSpec, Participant
-from debate_asb.protocol import AuditSample, ProtocolResult, ToolAccess, ToolSet, access_for, agent_loop, get_credence
+from debate_asb.protocol import (
+    AuditSample,
+    ProtocolResult,
+    ToolAccess,
+    ToolSet,
+    access_for,
+    agent_loop,
+    get_credence,
+)
 from debate_asb.task import protocol_task
 
 
@@ -30,10 +38,17 @@ class LoneJudge:
         system_prompt = self.judge.system_prompt or sample.prompts.judge(
             access_for(judge_tools), self.max_steps
         )
-        messages = [ChatMessageSystem(content=system_prompt), ChatMessageUser(content=sample.task)]
+        messages = [
+            ChatMessageSystem(content=system_prompt),
+            ChatMessageUser(content=sample.task),
+        ]
 
-        await agent_loop(self.judge, "judge", messages, judge_tools, self.max_steps, self.max_cost)
-        return ProtocolResult(credence=await get_credence(self.judge, "judge", messages, judge_tools))
+        await agent_loop(
+            self.judge, "judge", messages, judge_tools, self.max_steps, self.max_cost
+        )
+        return ProtocolResult(
+            credence=await get_credence(self.judge, "judge", messages, judge_tools)
+        )
 
 
 @task

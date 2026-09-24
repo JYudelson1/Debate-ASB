@@ -19,4 +19,11 @@ def load_artifacts(specs: dict[str, dict]) -> dict[str, Artifact]:
     return {name: ARTIFACT_TYPES[name](**spec) for name, spec in specs.items()}
 
 
-__all__ = ["Artifact", "ArtifactTooLarge", "Codebase", "Trajectory", "load_artifacts", "primitive"]
+__all__ = [
+    "Artifact",
+    "ArtifactTooLarge",
+    "Codebase",
+    "Trajectory",
+    "load_artifacts",
+    "primitive",
+]

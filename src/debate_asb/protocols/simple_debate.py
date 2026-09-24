@@ -22,8 +22,14 @@ from inspect_ai import task
 from inspect_ai.model import ChatMessage, ChatMessageSystem, ChatMessageUser
 
 from debate_asb.datasets import Dataset, load_samples
+from debate_asb.models import (
+    DEFAULT_MODEL,
+    DEFAULT_PROVIDER,
+    ModelSpec,
+    Participant,
+    Side,
+)
 from debate_asb.prompts import Access
-from debate_asb.models import DEFAULT_MODEL, DEFAULT_PROVIDER, ModelSpec, Participant, Side
 from debate_asb.protocol import (
     AuditSample,
     ProtocolResult,
@@ -57,7 +63,9 @@ class Debate:
 
     def __post_init__(self):
         if (self.sabotaged.side, self.clean.side) != (Side.SABOTAGED, Side.CLEAN):
-            raise ValueError("Debaters need opposing sides: sabotaged=SABOTAGED, clean=CLEAN")
+            raise ValueError(
+                "Debaters need opposing sides: sabotaged=SABOTAGED, clean=CLEAN"
+            )
 
     async def run(self, sample: AuditSample, tools: ToolSet) -> ProtocolResult:
         arguments = await stage("debate", lambda: self.debate(sample, tools))
@@ -65,9 +73,18 @@ class Debate:
 
     async def debate(self, sample: AuditSample, tools: ToolSet) -> list[dict]:
         debater_tools = tools.for_role("debaters")
-        debaters = [(self.sabotaged, "debater_sabotaged"), (self.clean, "debater_clean")]
+        debaters = [
+            (self.sabotaged, "debater_sabotaged"),
+            (self.clean, "debater_clean"),
+        ]
         conversations: dict[str, list[ChatMessage]] = {
-            role: [ChatMessageSystem(content=self._debater_prompt(sample, debater, access_for(debater_tools)))]
+            role: [
+                ChatMessageSystem(
+                    content=self._debater_prompt(
+                        sample, debater, access_for(debater_tools)
+                    )
+                )
+            ]
             for debater, role in debaters
         }
         arguments: list[dict] = []
@@ -75,15 +92,30 @@ class Debate:
         for round in range(1, self.n_rounds + 1):
             for debater, role in debaters:
                 messages = conversations[role]
-                messages.append(ChatMessageUser(content=self._turn_message(sample, arguments, round)))
-                argument = await agent_loop(
-                    debater, role, messages, debater_tools, self.debater_max_steps, self.debater_max_cost
+                messages.append(
+                    ChatMessageUser(
+                        content=self._turn_message(sample, arguments, round)
+                    )
                 )
-                arguments.append({"round": round, "side": debater.side.value, "argument": argument})
-                note("argument", round=round, side=debater.side.value, argument=argument)
+                argument = await agent_loop(
+                    debater,
+                    role,
+                    messages,
+                    debater_tools,
+                    self.debater_max_steps,
+                    self.debater_max_cost,
+                )
+                arguments.append(
+                    {"round": round, "side": debater.side.value, "argument": argument}
+                )
+                note(
+                    "argument", round=round, side=debater.side.value, argument=argument
+                )
         return arguments
 
-    async def judge_debate(self, sample: AuditSample, tools: ToolSet, arguments: list[dict]) -> ProtocolResult:
+    async def judge_debate(
+        self, sample: AuditSample, tools: ToolSet, arguments: list[dict]
+    ) -> ProtocolResult:
         judge_tools = tools.for_role("judge")
         system_prompt = self.judge.system_prompt or sample.prompts.judge(
             access_for(judge_tools), self.judge_max_steps
@@ -94,26 +126,48 @@ class Debate:
             clean_claim=sample.prompts.claims[Side.CLEAN],
         )
         debate = "\n\n".join(
-            f"## Round {a['round']}: debater arguing {a['side'].upper()}\n\n{a['argument']}" for a in arguments
+            f"## Round {a['round']}: debater arguing {a['side'].upper()}\n\n{a['argument']}"
+            for a in arguments
         )
         messages = [
             ChatMessageSystem(content=system_prompt),
-            ChatMessageUser(content=f"{sample.task}\n\n{intro}\n\n{debate}\n\nThe debate is over."),
+            ChatMessageUser(
+                content=f"{sample.task}\n\n{intro}\n\n{debate}\n\nThe debate is over."
+            ),
         ]
-        await agent_loop(self.judge, "judge", messages, judge_tools, self.judge_max_steps, self.judge_max_cost)
-        return ProtocolResult(credence=await get_credence(self.judge, "judge", messages, judge_tools))
-
-    def _debater_prompt(self, sample: AuditSample, debater: Participant, access: Access) -> str:
-        return debater.system_prompt or sample.prompts.debater(
-            debater.side, self.n_rounds, self.debater_max_steps, access, self.access.judge
+        await agent_loop(
+            self.judge,
+            "judge",
+            messages,
+            judge_tools,
+            self.judge_max_steps,
+            self.judge_max_cost,
+        )
+        return ProtocolResult(
+            credence=await get_credence(self.judge, "judge", messages, judge_tools)
         )
 
-    def _turn_message(self, sample: AuditSample, arguments: list[dict], round: int) -> str:
+    def _debater_prompt(
+        self, sample: AuditSample, debater: Participant, access: Access
+    ) -> str:
+        return debater.system_prompt or sample.prompts.debater(
+            debater.side,
+            self.n_rounds,
+            self.debater_max_steps,
+            access,
+            self.access.judge,
+        )
+
+    def _turn_message(
+        self, sample: AuditSample, arguments: list[dict], round: int
+    ) -> str:
         # Each debater's own earlier arguments are already in its conversation.
         # Turns alternate, so the only thing it hasn't seen is the last argument.
         parts = [sample.task] if round == 1 else []
         if arguments:
-            parts.append(f"Your opponent's latest argument:\n\n{arguments[-1]['argument']}")
+            parts.append(
+                f"Your opponent's latest argument:\n\n{arguments[-1]['argument']}"
+            )
         parts.append(f"Round {round} of {self.n_rounds}: your turn.")
         return "\n\n".join(parts)
 
@@ -138,4 +192,6 @@ def debate(
         judge=Participant(ModelSpec(judge_model, judge_provider)),
         n_rounds=n_rounds,
     )
-    return protocol_task(protocol, load_samples(dataset, sample_ids), replay, reuse, code_execution)
+    return protocol_task(
+        protocol, load_samples(dataset, sample_ids), replay, reuse, code_execution
+    )

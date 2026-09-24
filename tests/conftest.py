@@ -17,7 +17,9 @@ def script(monkeypatch):
     def install(outputs: list[ModelOutput]):
         mock = get_model("mockllm/model", custom_outputs=outputs)
         monkeypatch.setattr(ModelSpec, "get_model", lambda self: mock)
-        monkeypatch.setattr(ModelSpec, "price", lambda self: Price(input=1e-6, output=2e-6))
+        monkeypatch.setattr(
+            ModelSpec, "price", lambda self: Price(input=1e-6, output=2e-6)
+        )
         monkeypatch.setattr(ModelSpec, "context_length", lambda self: 1_000_000)
         monkeypatch.setattr(task_module, "check_openrouter_account", lambda: None)
         return mock

@@ -53,7 +53,9 @@ _INDEX_COLUMNS = [
 ]  # fmt: skip
 
 
-def monitoringbench_samples(sample_ids: list[str] | None = None, view: View = "output_only") -> list[Sample]:
+def monitoringbench_samples(
+    sample_ids: list[str] | None = None, view: View = "output_only"
+) -> list[Sample]:
     """Samples for the fetched trajectories (all of them, or just `sample_ids`)."""
     rows = _index()
     if sample_ids is not None:
@@ -61,14 +63,20 @@ def monitoringbench_samples(sample_ids: list[str] | None = None, view: View = "o
         rows = [r for r in rows if r["sample_uuid"] in wanted]
         unknown = wanted - {r["sample_uuid"] for r in rows}
         if unknown:
-            raise ValueError(f"Unknown MonitoringBench sample_uuids: {sorted(unknown)[:5]}")
+            raise ValueError(
+                f"Unknown MonitoringBench sample_uuids: {sorted(unknown)[:5]}"
+            )
 
     local = _local_logs()
     fetched = [r for r in rows if r["eval_log_filename"] in local]
     if sample_ids is not None and len(fetched) < len(rows):
-        raise FileNotFoundError(f"{len(rows) - len(fetched)} of those trajectories aren't fetched yet. {_FETCH_HINT}")
+        raise FileNotFoundError(
+            f"{len(rows) - len(fetched)} of those trajectories aren't fetched yet. {_FETCH_HINT}"
+        )
     if not fetched:
-        raise FileNotFoundError(f"No MonitoringBench trajectories fetched yet. {_FETCH_HINT}")
+        raise FileNotFoundError(
+            f"No MonitoringBench trajectories fetched yet. {_FETCH_HINT}"
+        )
 
     return [
         Sample(
@@ -97,7 +105,12 @@ def monitoringbench_samples(sample_ids: list[str] | None = None, view: View = "o
     ]
 
 
-def fetch(n: int | None = None, side_task: str | None = None, source: str | None = None, seed: int = 0) -> None:
+def fetch(
+    n: int | None = None,
+    side_task: str | None = None,
+    source: str | None = None,
+    seed: int = 0,
+) -> None:
     """Download the index, then the .eval logs for n random trajectories (or all)."""
     from remotezip import RemoteZip
 
@@ -132,7 +145,9 @@ _FETCH_HINT = "Run: uv run python -m debate_asb.datasets.monitoringbench fetch -
 
 def _index() -> list[dict]:
     if not PARQUET.exists():
-        raise FileNotFoundError(f"MonitoringBench index not found at {PARQUET}. {_FETCH_HINT}")
+        raise FileNotFoundError(
+            f"MonitoringBench index not found at {PARQUET}. {_FETCH_HINT}"
+        )
     return pq.read_table(PARQUET, columns=_INDEX_COLUMNS).to_pylist()
 
 
@@ -144,11 +159,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fetch MonitoringBench trajectories.")
     parser.add_argument("command", choices=["fetch"])
     parser.add_argument("--n", type=int, help="number of random trajectories to fetch")
-    parser.add_argument("--all", action="store_true", help="fetch every trajectory (~2.5 GB)")
+    parser.add_argument(
+        "--all", action="store_true", help="fetch every trajectory (~2.5 GB)"
+    )
     parser.add_argument("--side-task", choices=SIDE_TASKS)
-    parser.add_argument("--source", help="attack source, e.g. recon_refined, human_strategies")
+    parser.add_argument(
+        "--source", help="attack source, e.g. recon_refined, human_strategies"
+    )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
     if args.n is None and not args.all:
         parser.error("give --n N or --all")
-    fetch(n=None if args.all else args.n, side_task=args.side_task, source=args.source, seed=args.seed)
+    fetch(
+        n=None if args.all else args.n,
+        side_task=args.side_task,
+        source=args.source,
+        seed=args.seed,
+    )

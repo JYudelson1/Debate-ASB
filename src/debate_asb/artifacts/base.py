@@ -30,7 +30,9 @@ class ArtifactTooLarge(Exception):
     """dump_all() won't fit in the context window. Deliberately not truncated."""
 
 
-def primitive(method: Callable[..., Any] | None = None, *, enabled_if: str | None = None):
+def primitive(
+    method: Callable[..., Any] | None = None, *, enabled_if: str | None = None
+):
     """Mark an artifact method as a primitive, so tools() exposes it to participants."""
 
     def mark(method: Callable[..., Any]) -> Callable[..., Any]:
