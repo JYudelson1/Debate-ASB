@@ -5,6 +5,7 @@ from conftest import explore_then_answer, needs_asb, say, tool_call
 from inspect_ai import eval
 from inspect_ai.event import ModelEvent, SpanBeginEvent
 from inspect_ai.log import EvalSample, resolve_sample_attachments
+from inspect_ai.model import ModelOutput
 
 from debate_asb.datasets import asb_samples
 from debate_asb.datasets.monitoringbench import MB_ROOT, monitoringbench_samples
@@ -91,6 +92,24 @@ def test_budget_cuts_exploration_short(script, tmp_path):
         m for m in model_calls(sample, "judge")[-1].input if m.role == "tool"
     ]
     assert [m.function for m in tool_results] == ["list_files"]
+
+
+def test_generation_the_provider_failed_is_retried(script, tmp_path):
+    # OpenRouter's finish_reason "error" arrives as a truncated reply, stop_reason "unknown".
+    failed = ModelOutput.from_content(
+        "mockllm/model", "Fix 1: Loc", stop_reason="unknown"
+    )
+    script(
+        [tool_call("list_files"), failed, say("Looks fine.\n\nSabotage Credence: 40%")]
+    )
+    log = run(lone_judge(sample_ids="hop_jump"), tmp_path)
+    [sample] = log.samples
+    calls = model_calls(sample, "judge")
+    assert (
+        len(calls) == 3 and calls[2].config.cache is False
+    )  # the retry skips the cache
+    assert sample.store["credence"] == 40
+    assert [e["event"] for e in sample.store["transcript"]] == ["generation_error"]
 
 
 # --- full-context judge ---
