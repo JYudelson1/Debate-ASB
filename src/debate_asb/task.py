@@ -67,6 +67,8 @@ def protocol_solver(protocol: Protocol):
             setting=state.metadata.get("setting", "asb"),
         )
         store().set("replayed_stages", state.metadata.get("replayed_stages", {}))
+        # Scopes the model cache to this sample (see ModelSpec.cache_policy).
+        store().set("sample_id", str(state.sample_id))
 
         result = await protocol.run(sample, ToolSet(artifacts, protocol.access))
 

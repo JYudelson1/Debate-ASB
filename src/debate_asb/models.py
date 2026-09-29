@@ -10,6 +10,8 @@ Two things Inspect doesn't do for us, handled here:
 - Cache keying. Inspect's disk cache key does NOT include model_args (where the
   provider pin lives), so two runs pinned to different providers would share
   cache entries. We put the provider in `CachePolicy.scopes`, which is keyed.
+  Nor does it include the sample, so samples sending an identical request
+  would share one response; the sample id goes in the scopes too.
 - Pricing. We look up the pinned endpoint's price on OpenRouter so cost can be
   computed from token usage, including on cache hits (where Inspect
   records no usage or cost at all). This is *nominal* cost. Real spend
@@ -33,6 +35,7 @@ from enum import Enum
 from functools import cache
 
 from inspect_ai.model import CachePolicy, GenerateConfig, Model, ModelUsage, get_model
+from inspect_ai.util import store
 
 OPENROUTER_API = "https://openrouter.ai/api/v1"
 
@@ -123,7 +126,13 @@ class ModelSpec:
 
     def cache_policy(self) -> CachePolicy:
         # expiry=None: never expire (Inspect's default is one week).
-        return CachePolicy(expiry=None, scopes={"openrouter_provider": self.provider})
+        scopes = {"openrouter_provider": self.provider}
+        # Inspect's cache key has nothing sample-specific, so samples sending an
+        # identical request (every lone judge's first call) would share one response.
+        # Outside a sample, store() is empty and there's no sample scope.
+        if sample_id := store().get("sample_id"):
+            scopes["sample"] = sample_id
+        return CachePolicy(expiry=None, scopes=scopes)
 
     def price(self) -> Price:
         return _lookup_endpoint(self.model, self.provider)[0]

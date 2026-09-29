@@ -223,6 +223,20 @@ def test_reasoning_effort_task_args_reach_their_roles(script, tmp_path, monkeypa
     assert efforts == ["none"] * 5 + ["high"] * 2 + ["low"] * 4
 
 
+def test_cache_is_scoped_by_sample(script, tmp_path, monkeypatch):
+    # Every lone judge's first request is identical; each sample needs its own entry.
+    mock = script(explore_then_answer(80) + explore_then_answer(30))
+    scopes = []  # the cache scopes of the ModelSpec behind each call, in call order
+    monkeypatch.setattr(
+        ModelSpec,
+        "get_model",
+        lambda self: scopes.append(self.cache_policy().scopes) or mock,
+    )
+    run(lone_judge(sample_ids="hop_jump,hop_stride"), tmp_path)
+    assert [s["sample"] for s in scopes] == ["hop_jump"] * 4 + ["hop_stride"] * 4
+    assert "sample" not in ModelSpec("m", "p").cache_policy().scopes  # outside a sample
+
+
 def test_debaters_need_opposing_sides():
     spec = ModelSpec("m", "p")
     with pytest.raises(ValueError, match="opposing sides"):
