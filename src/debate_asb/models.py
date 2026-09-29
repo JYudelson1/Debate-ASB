@@ -106,6 +106,9 @@ class ModelSpec:
         return get_model(
             f"openrouter/{self.model}",
             provider={"order": [self.provider], "allow_fallbacks": False},
+            # Inspect marks tools strict by default. OpenAI then requires every
+            # parameter to be required, which our optional ones aren't (400 error).
+            strict_tools=False,
             config=GenerateConfig(
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,

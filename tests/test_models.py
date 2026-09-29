@@ -1,6 +1,7 @@
 """ModelSpec pinning rules, checked against a canned OpenRouter endpoints listing."""
 
 import pytest
+from inspect_ai.tool import ToolInfo, ToolParams
 
 from debate_asb import models
 from debate_asb.models import ModelSpec
@@ -80,3 +81,10 @@ def test_reasoning_effort_reaches_the_request(monkeypatch, effort):
 def test_no_reasoning_effort_sends_none(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "offline")
     assert "reasoning" not in request_body(ModelSpec("m", "google-ai-studio"))
+
+
+def test_tools_are_sent_without_strict_mode(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline")
+    model = ModelSpec("m", "google-ai-studio").get_model()
+    tool = ToolInfo(name="t", description="A tool.", parameters=ToolParams())
+    assert model.api.tools_to_openai([tool])[0]["function"]["strict"] is False
