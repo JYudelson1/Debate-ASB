@@ -33,6 +33,9 @@ class Spend:
     by_role: dict[str, float] = field(default_factory=lambda: defaultdict(float))
     api_calls: int = 0
     cache_hits: int = 0
+    # Attempts that failed (e.g. a 429 that Inspect then retried). Inspect logs each
+    # as its own model event, with no serving provider and usually nothing billed.
+    failed_attempts: int = 0
     # (model, pinned provider, provider that actually served it) -> number of calls
     served_by: Counter = field(default_factory=Counter)
     unpinned_calls: int = 0
@@ -48,6 +51,7 @@ class Spend:
             self.by_role[role] += usd
         self.api_calls += other.api_calls
         self.cache_hits += other.cache_hits
+        self.failed_attempts += other.failed_attempts
         self.served_by += other.served_by
         self.unpinned_calls += other.unpinned_calls
         self.unlogged_calls += other.unlogged_calls
@@ -68,6 +72,12 @@ def sample_spend(events: list) -> Spend:
             continue
         if event.cache == "read":
             spend.cache_hits += 1
+            continue
+        if event.error is not None:
+            spend.failed_attempts += 1
+            response = (event.call.response if event.call else None) or {}
+            role = roles.get(event.span_id, UNATTRIBUTED)
+            spend.by_role[role] += (response.get("usage") or {}).get("cost") or 0.0
             continue
         spend.api_calls += 1
         if event.call is None:
@@ -117,7 +127,7 @@ def spend_problems(spend: Spend) -> list[str]:
 if __name__ == "__main__":
     spend = log_spend(read_eval_log(sys.argv[1]))
     print(f"Real spend: ${spend.usd:.4f} over {spend.api_calls} API calls "
-          f"({spend.cache_hits} cache hits, free)")  # fmt: skip
+          f"({spend.cache_hits} cache hits, free; {spend.failed_attempts} failed attempts)")  # fmt: skip
     for role, usd in sorted(spend.by_role.items()):
         print(f"  {role}: ${usd:.4f}")
     for problem in spend_problems(spend):
