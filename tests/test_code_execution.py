@@ -1,6 +1,7 @@
 """Code execution: run_bash in a Docker sandbox holding a read-only copy of the codebase."""
 
 import subprocess
+from pathlib import Path
 
 import pytest
 from conftest import needs_asb, say, tool_call
@@ -69,9 +70,9 @@ def test_task_with_code_execution(script, fake_sandbox, tmp_path):
             "root"
         ]
     }
-    assert task.sandbox.type == "docker" and task.sandbox.config.endswith(
-        "docker/compose.yaml"
-    )
+    assert task.sandbox.type == "docker" and Path(
+        task.sandbox.config
+    ).as_posix().endswith("docker/compose.yaml")
 
     # Run it without Docker: the fake sandbox stands in.
     task.sandbox = None
