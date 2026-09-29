@@ -61,3 +61,22 @@ def test_cache_is_scoped_by_provider():
     b = ModelSpec("m", "google-vertex").cache_policy()
     assert a.scopes != b.scopes
     assert a.expiry is None
+
+
+def request_body(spec: ModelSpec) -> dict:
+    """The OpenRouter-specific part of the request `spec` would send (built offline)."""
+    model = spec.get_model()
+    return model.api.completion_params(model.config, tools=False)["extra_body"]
+
+
+@pytest.mark.parametrize("effort", ["none", "medium", "xhigh"])
+def test_reasoning_effort_reaches_the_request(monkeypatch, effort):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline")
+    body = request_body(ModelSpec("m", "google-ai-studio", reasoning_effort=effort))
+    assert body["reasoning"] == {"effort": effort}
+    assert body["provider"] == {"order": ["google-ai-studio"], "allow_fallbacks": False}
+
+
+def test_no_reasoning_effort_sends_none(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline")
+    assert "reasoning" not in request_body(ModelSpec("m", "google-ai-studio"))

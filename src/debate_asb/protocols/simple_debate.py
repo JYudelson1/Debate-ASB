@@ -176,8 +176,10 @@ class Debate:
 def debate(
     debater_model: str = DEFAULT_MODEL,
     debater_provider: str = DEFAULT_PROVIDER,
+    debater_reasoning_effort: str | None = None,
     judge_model: str = DEFAULT_MODEL,
     judge_provider: str = DEFAULT_PROVIDER,
+    judge_reasoning_effort: str | None = None,
     dataset: Dataset = "asb",
     sample_ids: str | list[str] | None = None,
     n_rounds: int = 2,
@@ -185,11 +187,17 @@ def debate(
     replay: str | None = None,
     reuse: str | list[str] = (),
 ):
-    debater = ModelSpec(debater_model, debater_provider)
+    debater = ModelSpec(
+        debater_model, debater_provider, reasoning_effort=debater_reasoning_effort
+    )
     protocol = Debate(
         sabotaged=Participant(debater, side=Side.SABOTAGED),
         clean=Participant(debater, side=Side.CLEAN),
-        judge=Participant(ModelSpec(judge_model, judge_provider)),
+        judge=Participant(
+            ModelSpec(
+                judge_model, judge_provider, reasoning_effort=judge_reasoning_effort
+            )
+        ),
         n_rounds=n_rounds,
     )
     return protocol_task(

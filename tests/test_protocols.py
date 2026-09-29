@@ -199,6 +199,30 @@ def test_debate_without_judge_access(script, tmp_path):
     )
 
 
+def test_reasoning_effort_task_args_reach_their_roles(script, tmp_path, monkeypatch):
+    mock = script(scripted_debate() + explore_then_answer(40))
+    efforts = []  # the effort of the ModelSpec behind each call, in call order
+    monkeypatch.setattr(
+        ModelSpec,
+        "get_model",
+        lambda self: efforts.append(self.reasoning_effort) or mock,
+    )
+    run(
+        debate(
+            sample_ids="hop_jump",
+            debater_reasoning_effort="none",
+            judge_reasoning_effort="high",
+        ),
+        tmp_path / "debate",
+    )
+    run(
+        lone_judge(sample_ids="hop_jump", judge_reasoning_effort="low"),
+        tmp_path / "lone",
+    )
+    # 5 debater calls, then the debate judge's 2; then the lone judge's 4.
+    assert efforts == ["none"] * 5 + ["high"] * 2 + ["low"] * 4
+
+
 def test_debaters_need_opposing_sides():
     spec = ModelSpec("m", "p")
     with pytest.raises(ValueError, match="opposing sides"):
