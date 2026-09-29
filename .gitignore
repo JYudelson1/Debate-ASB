@@ -16,3 +16,6 @@ data/
 # Inspect logs
 logs/
 .env
+
+# So that we can keep personal agent notes
+AGENTS.md
