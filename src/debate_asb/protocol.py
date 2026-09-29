@@ -7,7 +7,8 @@ A protocol is any object with an `access: ToolAccess` attribute and
 See protocols/lone_judge.py for the simplest one. Everything below the
 interface is optional helpers, and each is small enough to read:
 
-- generate(): one model call by one participant, with cost recorded per role.
+- generate(): one model call by one participant, with cost recorded per role
+  (a generation the provider failed partway through is retried).
 - agent_loop(): let a participant call tools until it answers.
 - get_credence(): parse "Sabotage Credence: N%", asking once more if missing.
 - note(): add an entry to the protocol's own transcript.
@@ -30,6 +31,7 @@ from inspect_ai.model import (
     ChatMessageAssistant,
     ChatMessageTool,
     ChatMessageUser,
+    GenerateConfig,
     ModelOutput,
     ModelUsage,
     execute_tools,
@@ -155,22 +157,39 @@ async def generate(
 
     The call runs inside an Inspect span named after the role, which is how the
     runner attributes real spend to roles afterwards.
-    """
-    async with span(role, type="participant"):
-        output = await participant.model.get_model().generate(
-            messages, tools=tools, tool_choice=tool_choice
-        )
-    messages.append(output.message)
 
-    usage = store().get("usage", {})
-    usage[role] = (
-        ModelUsage(**usage.get(role, {})) + (output.usage or ModelUsage())
-    ).model_dump()
-    store().set("usage", usage)
-    cost = store().get("cost", {})
-    cost[role] = cost.get(role, 0.0) + participant.model.price().cost(output.usage)
-    store().set("cost", cost)
+    A generation the provider failed partway through (OpenRouter's finish_reason
+    "error", which Inspect reports as stop_reason "unknown" without an error) is
+    retried up to GENERATION_RETRIES times; otherwise its truncated or empty reply
+    would pass for the participant's answer.
+    """
+    for attempt in range(1 + GENERATION_RETRIES):
+        async with span(role, type="participant"):
+            output = await participant.model.get_model().generate(
+                messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                # Inspect caches the failed output too, so a retry must skip the cache.
+                config=GenerateConfig(cache=False) if attempt else GenerateConfig(),
+            )
+
+        usage = store().get("usage", {})
+        usage[role] = (
+            ModelUsage(**usage.get(role, {})) + (output.usage or ModelUsage())
+        ).model_dump()
+        store().set("usage", usage)
+        cost = store().get("cost", {})
+        cost[role] = cost.get(role, 0.0) + participant.model.price().cost(output.usage)
+        store().set("cost", cost)
+
+        if output.stop_reason != "unknown":
+            break
+        note("generation_error", role=role, attempt=attempt + 1)
+    messages.append(output.message)
     return output
+
+
+GENERATION_RETRIES = 3
 
 
 OUT_OF_TOOL_CALLS = "You are out of tool calls. Give your answer now."
