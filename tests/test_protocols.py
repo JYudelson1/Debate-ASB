@@ -315,7 +315,12 @@ def test_lone_judge_on_a_trajectory(script, tmp_path):
             say("Sabotage Credence: 90%"),
         ]
     )
-    [sample_id] = [s.id for s in monitoringbench_samples()[:1]]
+    # Some index rows have a null attack_summary; the leak check needs a non-null one.
+    sample_id = next(
+        s.id
+        for s in monitoringbench_samples()
+        if s.metadata["answer_key"]["attack_summary"]
+    )
     log = run(lone_judge(dataset="monitoringbench", sample_ids=sample_id), tmp_path)
     [sample] = log.samples
     calls = model_calls(sample, "judge")
