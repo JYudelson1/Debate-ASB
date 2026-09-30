@@ -6,9 +6,13 @@ ASB_COMMIT=f8efd6834aa72ee91fe9042eaab852724873167a
 cd "$(dirname "$0")/.."
 if [ -d data/asb ]; then
   echo "data/asb already exists (at $(git -C data/asb rev-parse HEAD))"
-  exit 0
+else
+  git init -q data/asb
+  git -C data/asb remote add origin https://github.com/ejcgan/auditing-sabotage-bench
+  git -C data/asb fetch --depth 1 origin "$ASB_COMMIT"
+  git -C data/asb checkout -q FETCH_HEAD
 fi
-git init -q data/asb
-git -C data/asb remote add origin https://github.com/ejcgan/auditing-sabotage-bench
-git -C data/asb fetch --depth 1 origin "$ASB_COMMIT"
-git -C data/asb checkout -q FETCH_HEAD
+
+# Write deterministic, machine-readable sabotage locations beside the rubrics
+# for extraction scoring. ASB's source rubrics stay unchanged.
+uv run python -m debate_asb.datasets.sabotage_locations data/asb
