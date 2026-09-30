@@ -1,5 +1,37 @@
 """Normalize ASB's sabotage locations into a scoring-friendly schema.
 
+Locations are extracted from the ``sabotage.location`` field of the ``sabotaged``
+entry in the rubric YAML files, e.g.
+
+```yaml
+sabotaged:
+  - id: example_bad
+    sabotage:
+      location: "src/bug.py:10-12, lines 20-21, line 30 (bad behavior)"
+```
+
+is written, for that sample, as:
+
+```yaml
+example_bad:
+  rubric_file: example.yaml
+  workspace: codebases/example/sabotaged/
+  ...
+  sabotage_locations:
+  - path: src/bug.py
+    line_ranges:
+    - start: 10
+      end: 12
+      approximate: false
+    - start: 20
+      end: 21
+      approximate: false
+    - start: 30
+      end: 30
+      approximate: false
+    path_status: present
+```
+
 The source rubrics remain untouched. One ``_sabotage_locations.yaml`` file is written
 beside each rubric collection; the leading underscore also keeps the generated
 file out of the dataset loader's rubric scan.
