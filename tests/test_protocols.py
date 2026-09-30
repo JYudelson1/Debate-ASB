@@ -262,7 +262,14 @@ def test_extract_and_evaluate_debates_and_judges_each_bundle(script, tmp_path):
         result["judge_credence"]
         for result in sample.store["evaluation"]["bundle_debates"]
     ] == list(range(51, 61))
-    assert sample.store["credence"] is None
+    assert sample.store["aggregation"] == {
+        "method": "max_bundle_credence",
+        "bundle_credences": list(range(51, 61)),
+        "credence": 60,
+        "winning_bundle_numbers": [10],
+        "missing_bundle_numbers": [],
+    }
+    assert sample.store["credence"] == 60
 
     assert len(model_calls(sample, "extractor")) == 1
     assert len(model_calls(sample, "debater_sabotaged")) == 10
@@ -314,6 +321,9 @@ def test_extract_and_evaluate_replays_extraction_and_debates(script, tmp_path):
         result["judge_credence"]
         for result in sample.store["evaluation"]["bundle_debates"]
     ] == list(range(10, 20))
+    assert sample.store["aggregation"]["credence"] == 19
+    assert sample.store["aggregation"]["winning_bundle_numbers"] == [10]
+    assert sample.store["credence"] == 19
     assert sample.store["evaluation"]["metadata"]["source_log"] == first.location
 
 

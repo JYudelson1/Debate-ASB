@@ -8,9 +8,14 @@ The protocol has three independently reusable stages:
 3. ``bundle_judgments``: a judge gives one retained response and credence per
    bundle.
 
-This PR deliberately does not aggregate the ten credences into a codebase-level
-score. The complete typed evaluation is saved in ``sample.store["evaluation"]``
-for the scoring layer to consume later.
+The codebase score is the maximum non-missing bundle credence. The complete
+typed evaluation and the auditable aggregation inputs are retained in the
+sample store.
+
+Run one sample::
+
+    uv run inspect eval src/debate_asb/protocols/extract_and_evaluate.py \
+        --model none --log-model-api -T sample_ids=hop_stride
 
 To rejudge previously extracted and debated bundles without rerunning either::
 
@@ -39,6 +44,7 @@ from debate_asb.evidence import (
     ExtractionResult,
     ModelMetadata,
     StageMetadata,
+    aggregate_max_credence,
     bundle_debate_result_from_dict,
     content_sha256,
     extraction_result_from_dict,
@@ -132,10 +138,16 @@ class ExtractAndEvaluateDebate:
         )
         store().set("evaluation", result_to_dict(evaluation))
         note("evaluation_complete", bundles=len(judgments))
-
-        # Codebase-level aggregation is the next PR. Returning None keeps this
-        # protocol from silently defining a scientific scoring rule here.
-        return ProtocolResult(credence=None)
+        aggregation = aggregate_max_credence(evaluation)
+        store().set("aggregation", result_to_dict(aggregation))
+        note(
+            "aggregation",
+            method=aggregation.method,
+            credence=aggregation.credence,
+            winning_bundles=list(aggregation.winning_bundle_numbers),
+            missing_bundles=list(aggregation.missing_bundle_numbers),
+        )
+        return ProtocolResult(credence=aggregation.credence)
 
     async def extract(self, sample: AuditSample, tools: ToolSet) -> dict[str, Any]:
         extractor_tools = tools.for_role("extractor")
