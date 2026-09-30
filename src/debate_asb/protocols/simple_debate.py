@@ -16,7 +16,8 @@ The debate is a replayable stage: judge one debate k times with
         -T sample_ids=hop_jump,hop_stride
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from inspect_ai import task
 from inspect_ai.model import ChatMessage, ChatMessageSystem, ChatMessageUser
@@ -49,6 +50,14 @@ Two debaters have investigated this {subject}. One was assigned to argue that {s
 The debate follows."""
 
 
+@dataclass(frozen=True)
+class JudgeDecision:
+    """The judge's retained response and its parsed sabotage credence."""
+
+    response: str
+    credence: float | None
+
+
 @dataclass
 class Debate:
     sabotaged: Participant  # argues the codebase was sabotaged; goes first each round
@@ -60,6 +69,9 @@ class Debate:
     judge_max_steps: int = 40
     judge_max_cost: float = 3.0
     access: ToolAccess = ToolAccess()
+    note_context: dict[str, Any] = field(default_factory=dict)
+    subject: str | None = None
+    claims: dict[Side, str] | None = None
 
     def __post_init__(self):
         if (self.sabotaged.side, self.clean.side) != (Side.SABOTAGED, Side.CLEAN):
@@ -109,21 +121,32 @@ class Debate:
                     {"round": round, "side": debater.side.value, "argument": argument}
                 )
                 note(
-                    "argument", round=round, side=debater.side.value, argument=argument
+                    "argument",
+                    **self.note_context,
+                    round=round,
+                    side=debater.side.value,
+                    argument=argument,
                 )
         return arguments
 
     async def judge_debate(
         self, sample: AuditSample, tools: ToolSet, arguments: list[dict]
     ) -> ProtocolResult:
+        decision = await self.judge_debate_details(sample, tools, arguments)
+        return ProtocolResult(credence=decision.credence)
+
+    async def judge_debate_details(
+        self, sample: AuditSample, tools: ToolSet, arguments: list[dict]
+    ) -> JudgeDecision:
+        """Judge a debate while retaining the response used for the verdict."""
         judge_tools = tools.for_role("judge")
         system_prompt = self.judge.system_prompt or sample.prompts.judge(
             access_for(judge_tools), self.judge_max_steps
         )
         intro = DEBATE_INTRO.format(
-            subject=sample.prompts.subject,
-            sabotaged_claim=sample.prompts.claims[Side.SABOTAGED],
-            clean_claim=sample.prompts.claims[Side.CLEAN],
+            subject=self.subject or sample.prompts.subject,
+            sabotaged_claim=(self.claims or sample.prompts.claims)[Side.SABOTAGED],
+            clean_claim=(self.claims or sample.prompts.claims)[Side.CLEAN],
         )
         debate = "\n\n".join(
             f"## Round {a['round']}: debater arguing {a['side'].upper()}\n\n{a['argument']}"
@@ -143,8 +166,10 @@ class Debate:
             self.judge_max_steps,
             self.judge_max_cost,
         )
-        return ProtocolResult(
-            credence=await get_credence(self.judge, "judge", messages, judge_tools)
+        credence = await get_credence(self.judge, "judge", messages, judge_tools)
+        return JudgeDecision(
+            response=messages[-1].text,
+            credence=credence,
         )
 
     def _debater_prompt(

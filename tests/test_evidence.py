@@ -14,9 +14,12 @@ from debate_asb.evidence import (
     ModelMetadata,
     StageMetadata,
     content_sha256,
+    evaluation_result_from_dict,
+    extraction_result_from_dict,
     load_result,
     parse_evidence_bundles,
     render_evidence_bundles,
+    result_to_dict,
     save_result,
 )
 
@@ -182,6 +185,25 @@ def test_evaluation_requires_one_result_per_extracted_bundle():
     assert evaluation.bundle_debates == results
     with pytest.raises(ValueError, match="missing bundle debate"):
         EvaluationResult(metadata("evaluation"), extraction, results[:-1])
+
+
+def test_evaluation_allows_replayed_results_from_an_earlier_epoch():
+    extraction = extraction_result()
+    debates = tuple(bundle_result(bundle) for bundle in extraction.bundles)
+    replay_metadata = StageMetadata(
+        **{
+            **metadata("evaluation").__dict__,
+            "sample_epoch": 2,
+            "source_log": "logs/original.eval",
+        }
+    )
+
+    evaluation = EvaluationResult(replay_metadata, extraction, debates)
+
+    restored_extraction = extraction_result_from_dict(result_to_dict(extraction))
+    restored_evaluation = evaluation_result_from_dict(result_to_dict(evaluation))
+    assert restored_extraction == extraction
+    assert restored_evaluation == evaluation
 
 
 @pytest.mark.parametrize("kind", ["extraction", "bundle_debate", "evaluation"])
