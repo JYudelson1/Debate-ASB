@@ -13,7 +13,7 @@ import math
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 SCHEMA_VERSION = 1
 EXPECTED_BUNDLE_COUNT = 10
@@ -207,21 +207,18 @@ class EvaluationResult:
     bundle_debates: tuple[BundleDebateResult, ...]
 
     def __post_init__(self) -> None:
-        evaluation_sample = (self.metadata.sample_id, self.metadata.sample_epoch)
-        extraction_sample = (
-            self.extraction.metadata.sample_id,
-            self.extraction.metadata.sample_epoch,
-        )
+        evaluation_sample = self.metadata.sample_id
+        extraction_sample = self.extraction.metadata.sample_id
         if evaluation_sample != extraction_sample:
-            raise ValueError("evaluation and extraction sample id/epoch must match")
+            raise ValueError("evaluation and extraction sample ids must match")
         expected = {bundle.number: bundle for bundle in self.extraction.bundles}
         seen: set[int] = set()
         for result in self.bundle_debates:
             number = result.bundle.number
-            result_sample = (result.metadata.sample_id, result.metadata.sample_epoch)
+            result_sample = result.metadata.sample_id
             if result_sample != evaluation_sample:
                 raise ValueError(
-                    "all bundle debates must belong to the evaluation sample epoch"
+                    "all bundle debates must belong to the evaluation sample"
                 )
             if number in seen:
                 raise ValueError(f"duplicate bundle debate result: {number}")
@@ -365,6 +362,26 @@ def render_evidence_bundles(bundles: tuple[EvidenceBundle, ...]) -> str:
 type SavedResult = ExtractionResult | BundleDebateResult | EvaluationResult
 
 
+def result_to_dict(result: SavedResult) -> dict[str, JsonValue]:
+    """Convert a validated result to the JSON-able form used by replay stages."""
+    return cast(dict[str, JsonValue], asdict(result))
+
+
+def extraction_result_from_dict(value: Any) -> ExtractionResult:
+    """Validate and restore an extraction result from a replay stage."""
+    return _extraction_from_dict(_mapping(value, "extraction result"))
+
+
+def bundle_debate_result_from_dict(value: Any) -> BundleDebateResult:
+    """Validate and restore a bundle result from a replay stage."""
+    return _bundle_debate_from_dict(_mapping(value, "bundle debate result"))
+
+
+def evaluation_result_from_dict(value: Any) -> EvaluationResult:
+    """Validate and restore an evaluation result from JSON-able data."""
+    return _evaluation_from_dict(_mapping(value, "evaluation result"))
+
+
 def save_result(result: SavedResult, path: str | Path) -> Path:
     """Write one versioned result envelope as deterministic JSON."""
     destination = Path(path)
@@ -377,7 +394,7 @@ def save_result(result: SavedResult, path: str | Path) -> Path:
     document = {
         "schema_version": SCHEMA_VERSION,
         "result_type": result_type,
-        "result": asdict(result),
+        "result": result_to_dict(result),
     }
     temporary = destination.with_name(f".{destination.name}.tmp")
     temporary.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
