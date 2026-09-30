@@ -82,6 +82,7 @@ class ToolAccess:
     judge: bool = True
     debaters: bool = True
     consultant: bool = True
+    extractor: bool = True
 
 
 class ToolSet:
@@ -91,7 +92,9 @@ class ToolSet:
         self.access = access
         self._tools = [t for artifact in artifacts.values() for t in artifact.tools()]
 
-    def for_role(self, role: Literal["judge", "debaters", "consultant"]) -> list[Tool]:
+    def for_role(
+        self, role: Literal["judge", "debaters", "consultant", "extractor"]
+    ) -> list[Tool]:
         return self._tools if getattr(self.access, role) else []
 
 

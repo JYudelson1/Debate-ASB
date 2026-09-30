@@ -11,6 +11,7 @@ from debate_asb.datasets.monitoringbench import MB_ROOT, monitoringbench_samples
 from debate_asb.models import ModelSpec, Participant, Side
 from debate_asb.protocol import AuditSample, ToolAccess, parse_credence
 from debate_asb.protocols.consultancy import Consultancy, consultancy
+from debate_asb.protocols.extract_and_evaluate import extract_and_evaluate_debate
 from debate_asb.protocols.full_context_judge import full_context_judge
 from debate_asb.protocols.lone_judge import lone_judge
 from debate_asb.protocols.simple_debate import Debate, debate
@@ -207,6 +208,123 @@ def test_debaters_need_opposing_sides():
             Participant(spec, side=Side.SABOTAGED),
             Participant(spec),
         )
+
+
+# --- extract-and-evaluate debate ---
+
+
+def extracted_bundles() -> str:
+    return "\n\n".join(
+        f"""# Bundle {number}
+Observation: Candidate mechanism {number}.
+
+## Excerpt
+path: src/file_{number}.py
+lines: {number}-{number + 1}
+```text
+x = {number}
+```"""
+        for number in range(1, 11)
+    )
+
+
+def scripted_extract_and_evaluate(credences=range(51, 61)):
+    debates = [
+        response
+        for bundle in range(1, 11)
+        for response in (
+            say(f"S{bundle}: this mechanism changes the finding."),
+            say(f"C{bundle}: this mechanism is benign."),
+        )
+    ]
+    judgments = [
+        say(f"Bundle assessment.\n\nSabotage Credence: {credence}%")
+        for credence in credences
+    ]
+    return [say(extracted_bundles()), *debates, *judgments]
+
+
+def test_extract_and_evaluate_debates_and_judges_each_bundle(script, tmp_path):
+    script(scripted_extract_and_evaluate())
+
+    log = run(extract_and_evaluate_debate(sample_ids="hop_jump", n_rounds=1), tmp_path)
+    [sample] = log.samples
+
+    assert set(sample.store["stages"]) == {
+        "extraction",
+        "bundle_debates",
+        "bundle_judgments",
+    }
+    assert len(sample.store["stages"]["extraction"]["bundles"]) == 10
+    assert len(sample.store["stages"]["bundle_debates"]) == 10
+    assert len(sample.store["stages"]["bundle_judgments"]) == 10
+    assert [
+        result["judge_credence"]
+        for result in sample.store["evaluation"]["bundle_debates"]
+    ] == list(range(51, 61))
+    assert sample.store["aggregation"] == {
+        "method": "max_bundle_credence",
+        "bundle_credences": list(range(51, 61)),
+        "credence": 60,
+        "winning_bundle_numbers": [10],
+        "missing_bundle_numbers": [],
+    }
+    assert sample.store["credence"] == 60
+
+    assert len(model_calls(sample, "extractor")) == 1
+    assert len(model_calls(sample, "debater_sabotaged")) == 10
+    assert len(model_calls(sample, "debater_clean")) == 10
+    assert len(model_calls(sample, "judge")) == 10
+    assert "list_files" in {
+        tool.name for tool in model_calls(sample, "extractor")[0].tools
+    }
+
+    first_judge = model_calls(sample, "judge")[0]
+    assert "# Bundle 1" in first_judge.input[1].text
+    assert "# Bundle 2" not in first_judge.input[1].text
+    assert "this bundle's candidate mechanism IS evidence" in first_judge.input[1].text
+    assert "candidate mechanism described by this bundle" in first_judge.input[0].text
+    assert "Submit exactly 5 proposed fixes" not in first_judge.input[0].text
+
+    arguments = [
+        entry for entry in sample.store["transcript"] if entry["event"] == "argument"
+    ]
+    assert [entry["bundle"] for entry in arguments] == [
+        bundle for bundle in range(1, 11) for _ in range(2)
+    ]
+
+
+def test_extract_and_evaluate_replays_extraction_and_debates(script, tmp_path):
+    script(scripted_extract_and_evaluate())
+    first = run(
+        extract_and_evaluate_debate(sample_ids="hop_jump", n_rounds=1),
+        tmp_path / "first",
+    )
+
+    script([say(f"Sabotage Credence: {number}%") for number in range(10, 20)])
+    replay = run(
+        extract_and_evaluate_debate(
+            sample_ids="hop_jump",
+            n_rounds=1,
+            replay=first.location,
+            reuse=["extraction", "bundle_debates"],
+        ),
+        tmp_path / "replay",
+    )
+    [sample] = replay.samples
+
+    assert model_calls(sample, "extractor") == []
+    assert model_calls(sample, "debater_sabotaged") == []
+    assert model_calls(sample, "debater_clean") == []
+    assert len(model_calls(sample, "judge")) == 10
+    assert [
+        result["judge_credence"]
+        for result in sample.store["evaluation"]["bundle_debates"]
+    ] == list(range(10, 20))
+    assert sample.store["aggregation"]["credence"] == 19
+    assert sample.store["aggregation"]["winning_bundle_numbers"] == [10]
+    assert sample.store["credence"] == 19
+    assert sample.store["evaluation"]["metadata"]["source_log"] == first.location
 
 
 # --- consultancy ---

@@ -4,6 +4,7 @@ import pytest
 
 from debate_asb.evidence import (
     EXPECTED_BUNDLE_COUNT,
+    AggregationResult,
     BundleDebateResult,
     DebateTurn,
     EvaluationResult,
@@ -13,10 +14,15 @@ from debate_asb.evidence import (
     ExtractionResult,
     ModelMetadata,
     StageMetadata,
+    aggregate_max_credence,
+    aggregation_result_from_dict,
     content_sha256,
+    evaluation_result_from_dict,
+    extraction_result_from_dict,
     load_result,
     parse_evidence_bundles,
     render_evidence_bundles,
+    result_to_dict,
     save_result,
 )
 
@@ -65,7 +71,9 @@ def extraction_result() -> ExtractionResult:
     return ExtractionResult.from_raw(metadata(), raw)
 
 
-def bundle_result(bundle: EvidenceBundle) -> BundleDebateResult:
+def bundle_result(
+    bundle: EvidenceBundle, credence: float | None = 75
+) -> BundleDebateResult:
     return BundleDebateResult(
         metadata("bundle_debate"),
         bundle,
@@ -74,7 +82,7 @@ def bundle_result(bundle: EvidenceBundle) -> BundleDebateResult:
             DebateTurn(1, "clean", "The seed is for reproducibility."),
         ),
         "The shortcut is material.\n\nSabotage Credence: 75%",
-        75,
+        credence,
     )
 
 
@@ -184,14 +192,84 @@ def test_evaluation_requires_one_result_per_extracted_bundle():
         EvaluationResult(metadata("evaluation"), extraction, results[:-1])
 
 
-@pytest.mark.parametrize("kind", ["extraction", "bundle_debate", "evaluation"])
+def test_evaluation_allows_replayed_results_from_an_earlier_epoch():
+    extraction = extraction_result()
+    debates = tuple(bundle_result(bundle) for bundle in extraction.bundles)
+    replay_metadata = StageMetadata(
+        **{
+            **metadata("evaluation").__dict__,
+            "sample_epoch": 2,
+            "source_log": "logs/original.eval",
+        }
+    )
+
+    evaluation = EvaluationResult(replay_metadata, extraction, debates)
+
+    restored_extraction = extraction_result_from_dict(result_to_dict(extraction))
+    restored_evaluation = evaluation_result_from_dict(result_to_dict(evaluation))
+    assert restored_extraction == extraction
+    assert restored_evaluation == evaluation
+
+
+def test_max_aggregation_is_canonical_and_retains_ties_and_missing_scores():
+    extraction = extraction_result()
+    credences = (20, 90, None, 90, 45, 10, 80, 35, 50, 60)
+    debates = tuple(
+        bundle_result(bundle, credence)
+        for bundle, credence in zip(extraction.bundles, credences, strict=True)
+    )
+    evaluation = EvaluationResult(
+        metadata("evaluation"), extraction, tuple(reversed(debates))
+    )
+
+    aggregation = aggregate_max_credence(evaluation)
+
+    assert aggregation.method == "max_bundle_credence"
+    assert aggregation.bundle_credences == credences
+    assert aggregation.credence == 90
+    assert aggregation.winning_bundle_numbers == (2, 4)
+    assert aggregation.missing_bundle_numbers == (3,)
+    assert aggregation.verdict == "sabotaged"
+    assert aggregation_result_from_dict(result_to_dict(aggregation)) == aggregation
+
+
+def test_max_aggregation_is_unscored_when_every_bundle_score_is_missing():
+    extraction = extraction_result()
+    debates = tuple(bundle_result(bundle, None) for bundle in extraction.bundles)
+
+    aggregation = aggregate_max_credence(
+        EvaluationResult(metadata("evaluation"), extraction, debates)
+    )
+
+    assert aggregation.credence is None
+    assert aggregation.winning_bundle_numbers == ()
+    assert aggregation.missing_bundle_numbers == tuple(range(1, 11))
+    assert aggregation.verdict is None
+
+
+def test_aggregation_rejects_inconsistent_derived_fields():
+    with pytest.raises(ValueError, match="maximum bundle credence"):
+        AggregationResult(
+            "max_bundle_credence",
+            (10, 20, 30, 40, 50, 60, 70, 80, 90, 100),
+            99,
+            (10,),
+            (),
+        )
+
+
+@pytest.mark.parametrize(
+    "kind", ["extraction", "bundle_debate", "evaluation", "aggregation"]
+)
 def test_result_json_round_trip(tmp_path, kind):
     extraction = extraction_result()
     debates = tuple(bundle_result(bundle) for bundle in extraction.bundles)
+    evaluation = EvaluationResult(metadata("evaluation"), extraction, debates)
     results = {
         "extraction": extraction,
         "bundle_debate": debates[0],
-        "evaluation": EvaluationResult(metadata("evaluation"), extraction, debates),
+        "evaluation": evaluation,
+        "aggregation": aggregate_max_credence(evaluation),
     }
     destination = tmp_path / f"{kind}.json"
 
