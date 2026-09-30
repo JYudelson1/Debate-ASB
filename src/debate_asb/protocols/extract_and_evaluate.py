@@ -24,8 +24,6 @@ To rejudge previously extracted and debated bundles without rerunning either::
         -T replay=logs/<log>.eval -T reuse=extraction,bundle_debates
 """
 
-from __future__ import annotations
-
 from dataclasses import asdict, dataclass
 from functools import cache
 from pathlib import Path
