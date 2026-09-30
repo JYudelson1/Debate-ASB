@@ -26,6 +26,7 @@ from dataclasses import dataclass, replace
 from typing import ClassVar, Literal
 
 from inspect_ai import task
+from inspect_ai.dataset import Sample
 
 from debate_asb.datasets import Dataset, load_samples
 from debate_asb.datasets.monitoringbench import side_task_description
@@ -54,6 +55,7 @@ BRIEFING = {
     "{structure}": "structure",
     "{evasion}": "evasion",
     "{technique}": "technique",
+    "{side_task_description}": "side_task_description",  # added by the task, below
 }
 
 ASSIGNED = {Side.SABOTAGED: "assigned_sabotaged.md", Side.CLEAN: "assigned_not_sabotaged.md"}  # fmt: skip
@@ -134,9 +136,23 @@ def untrusted_briefing(sample: AuditSample) -> dict[str, str]:
             f"Sample {sample.id} has no {missing} in its answer key, so the "
             "untrusted debater can't be told the attack."
         )
-    briefing = {slot: key[field].strip() for slot, field in BRIEFING.items()}
-    briefing["{side_task_description}"] = side_task_description(sample.id).strip()
-    return briefing
+    return {slot: key[field].strip() for slot, field in BRIEFING.items()}
+
+
+def with_attacker_instructions(sample: Sample) -> Sample:
+    """Add the attacker's instructions to a MonitoringBench sample's answer key.
+
+    Done when the task is built, not during the run: reading a log is
+    synchronous Inspect I/O, which re-enters the event loop and crashes the
+    run once samples run in parallel.
+    """
+    answer_key = {
+        **sample.metadata["answer_key"],
+        "side_task_description": side_task_description(str(sample.id)),
+    }
+    return sample.model_copy(
+        update={"metadata": {**sample.metadata, "answer_key": answer_key}}
+    )
 
 
 def _fill(template: str, values: dict[str, str]) -> str:
@@ -180,4 +196,5 @@ def t_vs_u_debate(
         untrusted_max_cost=untrusted_max_cost,
         judge_max_cost=judge_max_cost,
     )
-    return protocol_task(protocol, load_samples(dataset, sample_ids), replay, reuse)
+    samples = [with_attacker_instructions(s) for s in load_samples(dataset, sample_ids)]
+    return protocol_task(protocol, samples, replay, reuse)
