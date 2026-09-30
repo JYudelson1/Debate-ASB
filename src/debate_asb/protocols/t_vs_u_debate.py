@@ -62,8 +62,16 @@ ASSIGNED = {Side.SABOTAGED: "assigned_sabotaged.md", Side.CLEAN: "assigned_not_s
 @dataclass
 class TvsUDebate(Debate):
     untrusted_side: Side = Side.CLEAN  # which of the two debaters is U
+    # Nominal USD per turn, instead of debater_max_cost: T and U are usually
+    # different models, at very different prices.
+    trusted_max_cost: float = 1.0
+    untrusted_max_cost: float = 1.0
 
     sees_answer_key: ClassVar[bool] = True
+
+    def _turn_budget(self, debater: Participant) -> float:
+        untrusted = debater.side == self.untrusted_side
+        return self.untrusted_max_cost if untrusted else self.trusted_max_cost
 
     def _debater_prompt(
         self, sample: AuditSample, debater: Participant, access: Access
@@ -149,6 +157,9 @@ def t_vs_u_debate(
     dataset: Dataset = "monitoringbench",
     sample_ids: str | list[str] | None = None,
     n_rounds: int = 2,
+    trusted_max_cost: float = 1.0,  # nominal USD per turn
+    untrusted_max_cost: float = 1.0,  # nominal USD per turn
+    judge_max_cost: float = 3.0,
     replay: str | None = None,
     reuse: str | list[str] = (),
 ):
@@ -165,5 +176,8 @@ def t_vs_u_debate(
         judge=Participant(ModelSpec(judge_model, judge_provider)),
         n_rounds=n_rounds,
         untrusted_side=u_side,
+        trusted_max_cost=trusted_max_cost,
+        untrusted_max_cost=untrusted_max_cost,
+        judge_max_cost=judge_max_cost,
     )
     return protocol_task(protocol, load_samples(dataset, sample_ids), replay, reuse)

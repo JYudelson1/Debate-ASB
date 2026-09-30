@@ -103,7 +103,7 @@ class Debate:
                     messages,
                     debater_tools,
                     self.debater_max_steps,
-                    self.debater_max_cost,
+                    self._turn_budget(debater),
                 )
                 arguments.append(
                     {"round": round, "side": debater.side.value, "argument": argument}
@@ -146,6 +146,10 @@ class Debate:
         return ProtocolResult(
             credence=await get_credence(self.judge, "judge", messages, judge_tools)
         )
+
+    def _turn_budget(self, debater: Participant) -> float:
+        """Nominal USD a debater may spend per turn."""
+        return self.debater_max_cost
 
     def _judge_prompt(self, sample: AuditSample, access: Access) -> str:
         return sample.prompts.judge(access, self.judge_max_steps)
