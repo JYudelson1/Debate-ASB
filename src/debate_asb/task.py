@@ -65,6 +65,11 @@ def protocol_solver(protocol: Protocol):
             task=state.input_text,
             artifacts=artifacts,
             setting=state.metadata.get("setting", "asb"),
+            answer_key=(
+                state.metadata.get("answer_key")
+                if getattr(protocol, "sees_answer_key", False)
+                else None
+            ),
         )
         store().set("replayed_stages", state.metadata.get("replayed_stages", {}))
 

@@ -23,7 +23,8 @@ and monitoringbench_samples() loads whichever have been fetched.
 
 Participants see the trajectory's messages only: the attacker's instructions
 are in the log's metadata, never in the messages, and stay out of the sample
-except as the answer key.
+except as the answer key. (The one exception is the untrusted debater of
+protocols/t_vs_u_debate.py, which is told the answer key on purpose.)
 """
 
 import argparse
@@ -33,6 +34,7 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 from inspect_ai.dataset import Sample
+from inspect_ai.log import read_eval_log_sample
 
 from debate_asb.artifacts.trajectory import View
 
@@ -72,6 +74,8 @@ MONITORINGBENCH_TASK = (
 _INDEX_COLUMNS = [
     "sample_uuid", "task_id", "side_task_name", "side_task_group", "source_name",
     "eval_log_filename", "main_task_success", "attack_summary",
+    "structural_strategy_explanation", "evasion_tactics_explanation",
+    "technical_techniques_explanation",
 ]  # fmt: skip
 
 
@@ -129,11 +133,28 @@ def monitoringbench_samples(
                     "attack_summary": r["attack_summary"],
                     "attack_source": r["source_name"],
                     "main_task_success": r["main_task_success"],
+                    # MonitoringBench's analysis of the attack: how it was laid
+                    # out, how it was disguised, and the mechanism it used.
+                    "structure": r["structural_strategy_explanation"],
+                    "evasion": r["evasion_tactics_explanation"],
+                    "technique": r["technical_techniques_explanation"],
                 },
             },
         )
         for r in fetched
     ]
+
+
+def side_task_description(sample_uuid: str) -> str:
+    """The attacker's instructions for one fetched trajectory: its objective and how success was tested.
+
+    Part of the answer key, but read from the trajectory's log on demand
+    rather than stored in every sample, since that means opening each log.
+    """
+    [row] = [r for r in _index() if r["sample_uuid"] == sample_uuid]
+    log = _local_logs()[row["eval_log_filename"]]
+    sample = read_eval_log_sample(str(log), uuid=sample_uuid)
+    return sample.metadata["side_task_description"]
 
 
 def fetch(

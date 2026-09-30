@@ -117,8 +117,8 @@ class Debate:
         self, sample: AuditSample, tools: ToolSet, arguments: list[dict]
     ) -> ProtocolResult:
         judge_tools = tools.for_role("judge")
-        system_prompt = self.judge.system_prompt or sample.prompts.judge(
-            access_for(judge_tools), self.judge_max_steps
+        system_prompt = self.judge.system_prompt or self._judge_prompt(
+            sample, access_for(judge_tools)
         )
         intro = DEBATE_INTRO.format(
             subject=sample.prompts.subject,
@@ -146,6 +146,9 @@ class Debate:
         return ProtocolResult(
             credence=await get_credence(self.judge, "judge", messages, judge_tools)
         )
+
+    def _judge_prompt(self, sample: AuditSample, access: Access) -> str:
+        return sample.prompts.judge(access, self.judge_max_steps)
 
     def _debater_prompt(
         self, sample: AuditSample, debater: Participant, access: Access
