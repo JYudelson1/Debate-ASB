@@ -21,6 +21,7 @@ from typing import Any
 
 from inspect_ai import task
 from inspect_ai.model import ChatMessage, ChatMessageSystem, ChatMessageUser
+from inspect_ai.util import span
 
 from debate_asb.datasets import Dataset, load_samples
 from debate_asb.models import (
@@ -109,14 +110,23 @@ class Debate:
                         content=self._turn_message(sample, arguments, round)
                     )
                 )
-                argument = await agent_loop(
-                    debater,
-                    role,
-                    messages,
-                    debater_tools,
-                    self.debater_max_steps,
-                    self.debater_max_cost,
+                # Create a span for the debate activity: e.g.
+                # bundle/3/debate/round/1/sabotaged, or debate/round/1/sabotaged
+                trace_name = _activity_span_name(
+                    self.note_context,
+                    "debate",
+                    round=round,
+                    role=debater.side.value,
                 )
+                async with span(trace_name, type="protocol_activity"):
+                    argument = await agent_loop(
+                        debater,
+                        role,
+                        messages,
+                        debater_tools,
+                        self.debater_max_steps,
+                        self.debater_max_cost,
+                    )
                 arguments.append(
                     {"round": round, "side": debater.side.value, "argument": argument}
                 )
@@ -158,15 +168,18 @@ class Debate:
                 content=f"{sample.task}\n\n{intro}\n\n{debate}\n\nThe debate is over."
             ),
         ]
-        await agent_loop(
-            self.judge,
-            "judge",
-            messages,
-            judge_tools,
-            self.judge_max_steps,
-            self.judge_max_cost,
-        )
-        credence = await get_credence(self.judge, "judge", messages, judge_tools)
+        # Create a span for the judgment activity: e.g. bundle/3/judgment, or judgment
+        trace_name = _activity_span_name(self.note_context, "judgment")
+        async with span(trace_name, type="protocol_activity"):
+            await agent_loop(
+                self.judge,
+                "judge",
+                messages,
+                judge_tools,
+                self.judge_max_steps,
+                self.judge_max_cost,
+            )
+            credence = await get_credence(self.judge, "judge", messages, judge_tools)
         return JudgeDecision(
             response=messages[-1].text,
             credence=credence,
@@ -195,6 +208,27 @@ class Debate:
             )
         parts.append(f"Round {round} of {self.n_rounds}: your turn.")
         return "\n\n".join(parts)
+
+
+def _activity_span_name(
+    context: dict[str, Any],
+    activity: str,
+    *,
+    round: int | None = None,
+    role: str | None = None,
+) -> str:
+    """Name of the span that groups all model and tool calls inside one activity.
+    This makes it easier to do post-hoc analysis on the model and tool calls.
+
+    A debate on an evidence bundle is ``bundle/{n}/debate/round/{r}/{side}`` or
+    ``bundle/{n}/judgment``. A whole-codebase debate drops the ``bundle/{n}/``
+    prefix.
+    """
+    prefix = f"bundle/{context['bundle']}/" if "bundle" in context else ""
+    name = f"{prefix}{activity}"
+    if round is not None and role is not None:
+        name += f"/round/{round}/{role}"
+    return name
 
 
 @task
