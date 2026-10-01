@@ -15,6 +15,24 @@ function currentBundle() {
   return bundles.find((bundle) => bundle.number === state.bundleNumber) || bundles[0];
 }
 
+function selectBundle(number) {
+  state.bundleNumber = number;
+  renderBundleList();
+  renderBundle(currentBundle());
+  byId("bundle-canvas").scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+const diagnosticsOf = {
+  sample: (sample) => sample.diagnostics.filter((d) => d.bundle == null),
+  bundle: (sample, number) => sample.diagnostics.filter((d) => d.bundle === number),
+  turn: (sample, number, turn) => sample.diagnostics.filter(
+    (d) => d.bundle === number && d.round === turn.round && d.participant === turn.side
+  ),
+  judge: (sample, number) => sample.diagnostics.filter(
+    (d) => d.bundle === number && d.participant === "judge"
+  ),
+};
+
 function initialize() {
   byId("report-title").textContent = report.task;
   byId("run-summary").textContent = report.source_log;
@@ -41,7 +59,7 @@ function initialize() {
 function render() {
   const sample = currentSample();
   renderRunTags(sample);
-  renderError(sample);
+  renderSampleDiagnostics(sample);
   renderProgress(sample);
   renderBundleList();
   renderBundle(currentBundle());
@@ -65,21 +83,32 @@ function renderRunTags(sample) {
   replaceChildren("run-tags", tags);
 }
 
-function renderError(sample) {
-  if (!sample.error) {
-    replaceChildren("error-banner", []);
+function renderSampleDiagnostics(sample) {
+  const sampleLevel = diagnosticsOf.sample(sample);
+  const bundleSummaries = sample.bundles
+    .map((bundle) => [bundle, diagnosticsOf.bundle(sample, bundle.number)])
+    .filter(([, found]) => found.some((d) => d.severity !== "info"));
+  if (!sampleLevel.length && !bundleSummaries.length) {
+    replaceChildren("sample-diagnostics", []);
     return;
   }
-  const message = sample.error.message || pretty(sample.error);
-  const details = element("details", {}, [
-    element("summary", { text: "Full error" }),
-    element("pre", { text: message }),
-  ]);
-  replaceChildren("error-banner", [
-    element("div", { className: "error-card" }, [
-      element("strong", { text: "Sample stopped before all stages completed" }),
-      element("p", { text: shortText(message, 260) }),
-      details,
+  const chips = bundleSummaries.map(([bundle, found]) =>
+    element("button", {
+      className: `bundle-chip ${worstSeverity(found)}`,
+      attributes: { type: "button", title: found.filter((d) => d.severity !== "info").map(diagnosticTitle).join("\n") },
+      on: { click: () => selectBundle(bundle.number) },
+    }, [element("span", { text: `Bundle ${bundle.number}` }), severityBadges(found)])
+  );
+  replaceChildren("sample-diagnostics", [
+    element("div", { className: "diagnostics-panel" }, [
+      element("h2", { text: "Transcript health" }),
+      ...diagnosticList(sampleLevel),
+      chips.length
+        ? element("div", { className: "bundle-chips" }, [
+            element("span", { className: "muted", text: "Bundles with errors or warnings:" }),
+            ...chips,
+          ])
+        : null,
     ]),
   ]);
 }
@@ -113,15 +142,12 @@ function renderBundleList() {
     return element("button", {
       className: `bundle-button ${bundle.number === state.bundleNumber ? "selected" : ""}`,
       attributes: { type: "button" },
-      on: {
-        click: () => {
-          state.bundleNumber = bundle.number;
-          renderBundleList();
-          renderBundle(bundle);
-        },
-      },
+      on: { click: () => selectBundle(bundle.number) },
     }, [
-      element("span", { className: "bundle-title", text: `Bundle ${bundle.number}` }),
+      element("span", { className: "bundle-title" }, [
+        element("span", { text: `Bundle ${bundle.number}` }),
+        severityBadges(diagnosticsOf.bundle(sample, bundle.number)),
+      ]),
       element("span", { className: "bundle-observation", text: bundle.observation }),
       element("span", {
         className: `bundle-state ${judged ? verdictClass(bundle.judge_verdict) : ""}`,
@@ -137,12 +163,14 @@ function renderBundle(bundle) {
     replaceChildren("bundle-canvas", [element("p", { className: "empty", text: "No evidence bundles were retained." })]);
     return;
   }
+  const sample = currentSample();
   const credence = bundle.judge_credence == null
     ? element("div", { className: "credence", text: "—" }, [element("small", { text: "not judged" })])
     : element("div", { className: `credence ${verdictClass(bundle.judge_verdict)}` }, [
         element("div", { text: `${bundle.judge_credence}%` }),
         element("small", { text: bundle.judge_verdict }),
       ]);
+  const found = diagnosticsOf.bundle(sample, bundle.number);
   replaceChildren("bundle-canvas", [
     element("header", { className: "canvas-header" }, [
       element("div", {}, [
@@ -151,9 +179,12 @@ function renderBundle(bundle) {
       ]),
       credence,
     ]),
+    found.length
+      ? element("section", { className: "section bundle-diagnostics" }, diagnosticList(found))
+      : null,
     evidenceSection(bundle),
-    debateSection(bundle),
-    judgeSection(bundle),
+    debateSection(sample, bundle),
+    judgeSection(sample, bundle),
     traceSection(bundle),
   ]);
 }
@@ -171,7 +202,7 @@ function evidenceSection(bundle) {
   return element("section", { className: "section" }, [element("h2", { text: "Evidence" }), ...content]);
 }
 
-function debateSection(bundle) {
+function debateSection(sample, bundle) {
   if (!bundle.turns.length) {
     return element("section", { className: "section" }, [
       element("h2", { text: "Debate" }),
@@ -184,21 +215,25 @@ function debateSection(bundle) {
     const turns = bundle.turns.filter((turn) => turn.round === round);
     return element("div", { className: "round" }, [
       element("h3", { text: `Round ${round}` }),
-      element("div", { className: "arguments" }, turns.map((turn) =>
-        element("div", { className: `argument ${turn.side}` }, [
-          element("h4", { text: turn.side.toUpperCase() }),
+      element("div", { className: "arguments" }, turns.map((turn) => {
+        const found = diagnosticsOf.turn(sample, bundle.number, turn);
+        return element("div", { className: `argument ${turn.side} ${worstSeverity(found) || ""}`.trim() }, [
+          element("h4", {}, [element("span", { text: turn.side.toUpperCase() }), severityBadges(found, { includeInfo: true })]),
+          diagnosticCallout(found),
           collapsible(markdownBlock(turn.argument), { collapsedHeight: ARGUMENT_COLLAPSED_HEIGHT }),
-        ])
-      )),
+        ]);
+      })),
     ]);
   });
   section.append(sectionHeader("Debate", [expandAllButton(() => section)]), ...cards);
   return section;
 }
 
-function judgeSection(bundle) {
+function judgeSection(sample, bundle) {
+  const found = diagnosticsOf.judge(sample, bundle.number);
   const body = bundle.judge_response
-    ? element("div", { className: "judge-card" }, [
+    ? element("div", { className: `judge-card ${worstSeverity(found) || ""}`.trim() }, [
+        diagnosticCallout(found),
         collapsible(markdownBlock(bundle.judge_response), { collapsedHeight: JUDGE_COLLAPSED_HEIGHT }),
       ])
     : element("p", { className: "empty", text: bundle.judge_credence == null ? "Judge not run for this bundle." : "Only the judge credence was retained." });
