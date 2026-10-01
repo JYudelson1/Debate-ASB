@@ -110,6 +110,8 @@ class Debate:
                         content=self._turn_message(sample, arguments, round)
                     )
                 )
+                # Create a span for the debate activity: e.g.
+                # bundle/3/debate/round/1/sabotaged, or debate/round/1/sabotaged
                 trace_name = _activity_span_name(
                     self.note_context,
                     "debate",
@@ -166,6 +168,7 @@ class Debate:
                 content=f"{sample.task}\n\n{intro}\n\n{debate}\n\nThe debate is over."
             ),
         ]
+        # Create a span for the judgment activity: e.g. bundle/3/judgment, or judgment
         trace_name = _activity_span_name(self.note_context, "judgment")
         async with span(trace_name, type="protocol_activity"):
             await agent_loop(
