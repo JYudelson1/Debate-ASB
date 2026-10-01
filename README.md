@@ -272,6 +272,13 @@ location hints. These are labeled as potentially stale orientation aids and are
 never used for extraction scoring. Partial and failed runs retain whatever
 stages completed before the error.
 
+A "Transcript health" panel and per-turn callouts flag protocol edge cases
+that affect how far a transcript can be trusted. Examples are tool history
+flattened after a provider rejection, arguments that are only an unexecuted
+`[called …]` tool call, missing judge credences, exhausted tool budgets,
+replayed stages and sample errors. To add a check, write a function in
+`viewer/diagnostics.py` and list it in `CHECKS`.
+
 - **There's no published ASB number for our exact setting.** ASB's headline
   0.77 AUROC (Gemini 3.1 Pro) is with full code execution, averaged per sample
   over 5 runs. Their closest reported regime, `no_experiments` (~0.62 Gemini 3.1
