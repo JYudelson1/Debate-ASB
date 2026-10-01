@@ -59,6 +59,9 @@ class Codebase(Artifact):
             recursive: List every file under the directory instead of one level.
         """
         target = self._resolve(directory)
+        if not target.is_dir():
+            # iterdir() would raise NotADirectoryError, which fails the sample.
+            raise ToolError(f"{directory} is a file, not a directory")
         if recursive:
             lines = [self._describe(p) for p in self._files(target)]
         else:
