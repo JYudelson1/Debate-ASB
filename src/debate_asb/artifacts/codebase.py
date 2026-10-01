@@ -10,6 +10,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
+from inspect_ai.tool import ToolError
 from inspect_ai.util import sandbox
 
 from debate_asb.artifacts.base import (
@@ -115,7 +116,11 @@ class Codebase(Artifact):
             directory: Directory to search, relative to the codebase root.
             ignore_case: Case-insensitive matching.
         """
-        regex = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
+        try:
+            regex = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
+        except re.error as e:
+            # A ToolError goes back to the model; re.error would fail the sample.
+            raise ToolError(f"Invalid regular expression: {e}") from e
         matches = []
         for file in self._files(self._resolve(directory)):
             if file.stat().st_size > MAX_SEARCH_FILE_BYTES or _is_binary(file):
