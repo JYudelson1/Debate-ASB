@@ -33,7 +33,7 @@ from typing import Any
 
 from inspect_ai import task
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser
-from inspect_ai.util import store
+from inspect_ai.util import span, store
 
 from debate_asb.datasets import load_samples
 from debate_asb.evidence import (
@@ -159,14 +159,15 @@ class ExtractAndEvaluateDebate:
             ),
         ]
         costs_before = self._costs()
-        raw_output = await agent_loop(
-            self.extractor,
-            "extractor",
-            messages,
-            extractor_tools,
-            self.extractor_max_steps,
-            self.extractor_max_cost,
-        )
+        async with span("extraction", type="protocol_activity"):
+            raw_output = await agent_loop(
+                self.extractor,
+                "extractor",
+                messages,
+                extractor_tools,
+                self.extractor_max_steps,
+                self.extractor_max_cost,
+            )
         result = ExtractionResult.from_raw(
             self._metadata(
                 sample,
