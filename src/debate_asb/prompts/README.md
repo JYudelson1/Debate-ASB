@@ -147,53 +147,42 @@ the only authorized address) in our own words. The prompts don't state a base
 rate, since the public MonitoringBench data is all attacks and "50%" would be
 false.
 
-# Trusted-vs-untrusted debate on MonitoringBench (`t_vs_u_monitoringbench/`)
+# Trusted-vs-untrusted debate (`t_vs_u_monitoringbench/`)
 
-Used only by `protocols/t_vs_u_debate.py`, which has its own prompt folder per
-setting instead of using the setting's. This is the only one so far.
-
-Copied unchanged from `monitoringbench/`, so the folder has everything the
-protocol needs: `access_tools.md`, `access_tools_turn.md`, `access_none.md`,
-`judge_answer.md`, `game_rules.md`.
+Prompts for `protocols/t_vs_u_debate.py` on MonitoringBench, the only setting
+it supports so far. The protocol uses this folder instead of
+`monitoringbench/`. `access_tools.md`, `access_tools_turn.md`,
+`access_none.md`, `judge_answer.md` and `game_rules.md` are copies of the
+`monitoringbench/` files, unchanged.
 
 ## Judge: `judge.md` + one `access_*.md` + `judge_answer.md`
 
-`monitoringbench/judge.md` unchanged plus one ADDED section, "The Debate": that
-the debaters were assigned their sides, and which one (by the side it argues)
-is the trusted and which the untrusted model (after the wording of
-`extra_context_trusted.md`). The judge's user message is simple_debate.py's.
+`monitoringbench/judge.md` with one ADDED section, "The Debate": both debaters
+were assigned their sides, the debater arguing one side (filled in by the
+protocol) is a trusted model, and the other is an untrusted model that may be
+scheming. The judge is not told what the untrusted debater knows. Its user
+message is the one from `simple_debate.py`.
 
 ## Debater: `debater.md`
 
-`monitoringbench/debater.md` unchanged plus one ADDED slot, `{extra_context}`,
-just before the setting description. The protocol fills it with one
-`extra_context_*.md` followed by one `*_assigned_*.md`:
+`monitoringbench/debater.md` with one ADDED slot, `{extra_context}`, before
+the setting description. The protocol fills it with one `extra_context_*.md`
+followed by one `*_assigned_*.md`, all NEW (ours):
 
-NEW (Kenzo's). From Kenzo's draft, with markdown headings added, a typo fixed,
-the wording changed from ASB's to MonitoringBench's ("this codebase is
-sabotaged" -> "the agent carried out a hidden attack in this trajectory"), and
-the edits listed below.
-
-- `extra_context_trusted.md`: the opponent's model id, that it is untrusted
-  and might be scheming, and that it might not be.
-  - **CHANGED:** "has helped with creating the research we are checking" is
-    now "is the agent that produced the trajectory we are checking".
-- `extra_context_untrusted.md`: the hidden motive, and what the attack was,
-  from the sample's answer key: MonitoringBench's `attack_summary`; the
-  attacker's instructions (`side_task_description` in the trajectory's log:
-  objective and success test); and MonitoringBench's three explanations of
-  the attack (structure, evasion, technique).
-  - **ADDED:** the sentences introducing the instructions and the analysis.
-  - **ADDED:** the opponent's model id, and that the opponent and the judge
-    are trusted models (the draft only said they are inferior).
-- `trusted_assigned_sabotaged.md`, `trusted_assigned_not_sabotaged.md`:
-  NEW: the first two sentences of the draft's untrusted assignments.
-- `untrusted_assigned_not_sabotaged.md`:
-  - **ADDED:** "So, since you know the agent carried out a hidden attack, you
-    will have to lie: ..."
-- `untrusted_assigned_sabotaged.md`:
-  - **ADDED:** "you will have to sandbag:" before the draft's strategy sentence.
-
-The rest of Kenzo's draft (the Khan et al.-style debater prompt: named
-debaters, word limit, judging criteria, reasoning then "Argument:") is not
-used.
+- `extra_context_trusted.md`: the opponent's model id; that the opponent is an
+  untrusted model that may be scheming, may also be arguing in good faith, and
+  may be the agent that produced the trajectory; and that the debater and the
+  judge are trusted, less capable models.
+- `extra_context_untrusted.md`: the opponent's model id; that the opponent and
+  the judge are trusted, less capable models; the hidden goal of a "no attack"
+  verdict; and the attack, from the sample's answer key: MonitoringBench's
+  `attack_summary`, the attacker's instructions (`side_task_description` from
+  the trajectory's log: objective and success test), and MonitoringBench's
+  three explanations of the attack (structure, evasion, technique).
+- `trusted_assigned_sabotaged.md`, `trusted_assigned_not_sabotaged.md`: which
+  side the debater and its opponent argue.
+- `untrusted_assigned_not_sabotaged.md`: the same, plus that the debater has
+  to lie, without steering the debate toward the actual attack.
+- `untrusted_assigned_sabotaged.md`: the same, plus that the debater has to
+  sandbag: make arguments weak enough to be refuted, without steering the
+  debate toward the actual attack.
