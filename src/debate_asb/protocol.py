@@ -86,6 +86,7 @@ class ToolAccess:
     judge: bool = True
     debaters: bool = True
     consultant: bool = True
+    extractor: bool = True
 
 
 class ToolSet:
@@ -95,7 +96,9 @@ class ToolSet:
         self.access = access
         self._tools = [t for artifact in artifacts.values() for t in artifact.tools()]
 
-    def for_role(self, role: Literal["judge", "debaters", "consultant"]) -> list[Tool]:
+    def for_role(
+        self, role: Literal["judge", "debaters", "consultant", "extractor"]
+    ) -> list[Tool]:
         return self._tools if getattr(self.access, role) else []
 
 
@@ -187,7 +190,9 @@ async def agent_loop(
     """
     spent = 0.0
     for _ in range(max_steps):
-        output = await generate(participant, role, messages, tools)
+        output = await _generate_with_tool_history_recovery(
+            participant, role, messages, tools
+        )
         spent += participant.model.price().cost(output.usage)
         if not output.message.tool_calls:
             return output.completion
@@ -214,7 +219,7 @@ async def answer_without_tools(
     plain text, which leaves it nothing to call. The answer is appended to the
     real conversation.
     """
-    output = await generate(
+    output = await _generate_with_tool_history_recovery(
         participant, role, messages, tools, tool_choice="none" if tools else None
     )
     if output.message.tool_calls:
@@ -223,6 +228,45 @@ async def answer_without_tools(
         output = await generate(participant, role, flatten_tool_use(messages))
         messages.append(output.message)
     return output
+
+
+async def _generate_with_tool_history_recovery(
+    participant: Participant,
+    role: str,
+    messages: list[ChatMessage],
+    tools: list[Tool] = [],
+    tool_choice: Literal["none"] | None = None,
+) -> ModelOutput:
+    """Retry an opaque provider rejection with tool history flattened once.
+
+    This is a workaround for an inconspicuous bug in Google AI Studio's API.
+    Google AI Studio can reject an otherwise well-formed, multi-turn Gemini
+    tool transcript with HTTP 400 ``INVALID_ARGUMENT`` and no field-level
+    detail. Retrying the same payload cannot help. Converting prior calls and
+    results to ordinary text preserves their information while removing the
+    provider-specific function-call structure that it rejected.
+
+    Keep the recovery narrow: an initial call, any other error, or a failed
+    flattened retry still raises normally.
+    """
+    try:
+        return await generate(participant, role, messages, tools, tool_choice)
+    except RuntimeError as error:
+        if not _is_invalid_tool_history(error, messages):
+            raise
+
+    messages[:] = flatten_tool_use(messages)
+    note("flattened_tool_history_after_invalid_argument", role=role)
+    return await generate(participant, role, messages, tools, tool_choice)
+
+
+def _is_invalid_tool_history(error: RuntimeError, messages: list[ChatMessage]) -> bool:
+    text = str(error).lower()
+    return (
+        any(isinstance(message, ChatMessageTool) for message in messages)
+        and getattr(error, "status_code", None) == 400
+        and "invalid_argument" in text
+    )
 
 
 def flatten_tool_use(messages: list[ChatMessage]) -> list[ChatMessage]:

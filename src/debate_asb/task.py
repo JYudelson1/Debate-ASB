@@ -78,6 +78,7 @@ def protocol_solver(protocol: Protocol):
             ),
         )
         store().set("replayed_stages", state.metadata.get("replayed_stages", {}))
+        store().set("replay_source", state.metadata.get("replay_source"))
 
         result = await protocol.run(sample, ToolSet(artifacts, protocol.access))
 
@@ -256,7 +257,13 @@ def _attach_replayed_stages(
         replayed = {name: stages[name] for name in reuse}
         attached.append(
             sample.model_copy(
-                update={"metadata": {**sample.metadata, "replayed_stages": replayed}}
+                update={
+                    "metadata": {
+                        **sample.metadata,
+                        "replayed_stages": replayed,
+                        "replay_source": log_path,
+                    }
+                }
             )
         )
     return attached
