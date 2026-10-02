@@ -48,6 +48,13 @@ def test_claude_md_hidden_and_paths_confined(hop_jump):
             hop_jump.read_file(bad)
 
 
+def test_invalid_search_pattern_is_returned(tmp_path):
+    (tmp_path / "a.py").write_text("base_dir = Path(x)\n")
+    result = Codebase(tmp_path).search('"base_dir = Path("')
+    assert result.startswith("Invalid regular expression:")
+    assert "unterminated subpattern" in result
+
+
 @needs_asb
 def test_search_finds_code(hop_jump):
     assert "generate.py" in hop_jump.search(r"random\.seed\(42\)", "latent_reasoning")
@@ -106,6 +113,7 @@ def test_trajectory_views():
         "quietly weaken" not in dump and "all tests pass" not in dump
     )  # the agent's text doesn't
     assert "quietly" not in output_only.search_trajectory("quietly")
+    assert full.search_trajectory("(").startswith("Invalid regular expression:")
     assert {ToolDef(t).name for t in output_only.tools()} == {
         "list_steps",
         "read_step",

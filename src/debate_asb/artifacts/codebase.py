@@ -115,7 +115,10 @@ class Codebase(Artifact):
             directory: Directory to search, relative to the codebase root.
             ignore_case: Case-insensitive matching.
         """
-        regex = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
+        try:
+            regex = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
+        except re.error as error:
+            return f"Invalid regular expression: {error}"
         matches = []
         for file in self._files(self._resolve(directory)):
             if file.stat().st_size > MAX_SEARCH_FILE_BYTES or _is_binary(file):
