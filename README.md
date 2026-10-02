@@ -62,6 +62,7 @@ Protocols shipped:
 | Full-context judge | `protocols/full_context_judge.py` | Whole codebase in one prompt, no tools, one answer. |
 | Debate | `protocols/simple_debate.py` | Two debaters on opposite sides take turns (investigating privately); a judge decides. |
 | Consultancy | `protocols/consultancy.py` | One consultant argues a (by default random) side; a judge questions it, then decides. |
+| Trusted-vs-untrusted debate | `protocols/t_vs_u_debate.py` | Debate where one debater is told the sabotage and secretly works for a "not sabotaged" verdict; the judge knows which debater is untrusted. MonitoringBench only, for now. |
 | Extract-and-evaluate | `protocols/extract_and_evaluate.py` | **Deliberate stub**: mentee work. |
 
 ## How the code is organised
@@ -102,7 +103,9 @@ tools until it answers; `note()` writes to the protocol's own transcript. Add a
   know why.
 - **Protocols can read artifacts themselves**, too: `sample.codebase.read_file(...)`
   is the same function the participants' `read_file` tool calls.
-- **Protocols never see the label or the answer key.**
+- **Protocols never see the label or the answer key**, unless they set
+  `sees_answer_key = True` to brief an untrusted participant (only
+  `t_vs_u_debate.py` does).
 - **Prompts should only say true things.** Get prompts from `sample.prompts`
   (the right set for the sample's dataset), and pass `access_for(tools)` so
   the access paragraph matches what the participant can actually do.
@@ -226,7 +229,8 @@ experiments" text. Details:
 - **MonitoringBench** trajectories are shown in the "output only" view by
   default: the agent's task, its tool calls and their outputs, but not its own
   text or reasoning (as MonitoringBench's monitors see them). The attacker's
-  instructions are in the logs' metadata, never in what participants see.
+  instructions are in the logs' metadata, never in what participants see
+  (except the untrusted debater of `t_vs_u_debate.py`, which is told them).
 
 ### MonitoringBench `pilot_v1` preset
 

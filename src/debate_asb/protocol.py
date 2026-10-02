@@ -13,7 +13,9 @@ interface is optional helpers, and each is small enough to read:
 - note(): add an entry to the protocol's own transcript.
 - stage(): save a step's output so a later run can replay from it.
 
-Protocols never see a sample's label or answer key.
+Protocols never see a sample's label. They never see its answer key either,
+unless they opt in with `sees_answer_key = True` to brief an untrusted
+participant (see protocols/t_vs_u_debate.py).
 """
 
 import json
@@ -55,6 +57,8 @@ class AuditSample:
     task: str
     artifacts: dict[str, Artifact]
     setting: str = "asb"  # which prompts fit this sample; see prompts/__init__.py
+    # The dataset's answer key. None unless the protocol sets `sees_answer_key = True`.
+    answer_key: Any = None
 
     @property
     def prompts(self) -> PromptSet:
