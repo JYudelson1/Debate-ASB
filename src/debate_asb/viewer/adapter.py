@@ -10,6 +10,7 @@ from typing import Any
 
 from inspect_ai.log import EvalLog, read_eval_log
 
+from debate_asb.viewer.markdown import markdown_text
 from debate_asb.viewer.rubrics import load_rubric_context
 from debate_asb.viewer.schema import (
     BundleView,
@@ -168,9 +169,12 @@ def _merge_legacy_debate(
 
 def _bundle_view(record: dict[str, Any], trace: tuple[TraceView, ...]) -> BundleView:
     turns = tuple(
-        TurnView(int(turn["round"]), str(turn["side"]), str(turn["argument"]))
+        TurnView(
+            int(turn["round"]), str(turn["side"]), markdown_text(str(turn["argument"]))
+        )
         for turn in record.get("turns") or []
     )
+    judge_response = record.get("judge_response")
     credence = record.get("judge_credence")
     verdict = record.get("judge_verdict")
     if verdict is None and credence is not None:
@@ -192,7 +196,9 @@ def _bundle_view(record: dict[str, Any], trace: tuple[TraceView, ...]) -> Bundle
         observation=str(record.get("observation") or ""),
         excerpts=tuple(_excerpt_view(value) for value in record.get("excerpts") or []),
         turns=turns,
-        judge_response=record.get("judge_response"),
+        judge_response=(
+            markdown_text(str(judge_response)) if judge_response is not None else None
+        ),
         judge_credence=float(credence) if credence is not None else None,
         judge_verdict=verdict,
         status=status,
