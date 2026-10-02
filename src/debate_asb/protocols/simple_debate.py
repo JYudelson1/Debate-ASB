@@ -125,7 +125,7 @@ class Debate:
                         messages,
                         debater_tools,
                         self.debater_max_steps,
-                        self.debater_max_cost,
+                        self._turn_budget(debater),
                     )
                 arguments.append(
                     {"round": round, "side": debater.side.value, "argument": argument}
@@ -150,8 +150,8 @@ class Debate:
     ) -> JudgeDecision:
         """Judge a debate while retaining the response used for the verdict."""
         judge_tools = tools.for_role("judge")
-        system_prompt = self.judge.system_prompt or sample.prompts.judge(
-            access_for(judge_tools), self.judge_max_steps
+        system_prompt = self.judge.system_prompt or self._judge_prompt(
+            sample, access_for(judge_tools)
         )
         intro = DEBATE_INTRO.format(
             subject=self.subject or sample.prompts.subject,
@@ -184,6 +184,13 @@ class Debate:
             response=messages[-1].text,
             credence=credence,
         )
+
+    def _turn_budget(self, debater: Participant) -> float:
+        """Nominal USD a debater may spend per turn."""
+        return self.debater_max_cost
+
+    def _judge_prompt(self, sample: AuditSample, access: Access) -> str:
+        return sample.prompts.judge(access, self.judge_max_steps)
 
     def _debater_prompt(
         self, sample: AuditSample, debater: Participant, access: Access

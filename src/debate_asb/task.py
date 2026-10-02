@@ -7,6 +7,7 @@ function that calls it, which is what `inspect eval` runs.
 import math
 from pathlib import Path
 
+import anyio
 from inspect_ai import Task
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.log import read_eval_log
@@ -56,7 +57,12 @@ def protocol_task(
 @solver
 def protocol_solver(protocol: Protocol):
     async def solve(state: TaskState, generate: Generate) -> TaskState:
-        artifacts = load_artifacts(state.metadata["artifacts"])
+        # In a thread: building a Trajectory reads an eval log with Inspect's
+        # synchronous reader, which on the event loop re-enters the loop and
+        # crashes the run once several samples are in flight.
+        artifacts = await anyio.to_thread.run_sync(
+            load_artifacts, state.metadata["artifacts"]
+        )
         if state.metadata["artifacts"].get("codebase", {}).get("code_execution"):
             await _prepare_workspace()
         sample = AuditSample(
@@ -65,6 +71,11 @@ def protocol_solver(protocol: Protocol):
             task=state.input_text,
             artifacts=artifacts,
             setting=state.metadata.get("setting", "asb"),
+            answer_key=(
+                state.metadata.get("answer_key")
+                if getattr(protocol, "sees_answer_key", False)
+                else None
+            ),
         )
         store().set("replayed_stages", state.metadata.get("replayed_stages", {}))
         store().set("replay_source", state.metadata.get("replay_source"))
