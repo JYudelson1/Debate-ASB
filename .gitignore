@@ -15,6 +15,8 @@ wheels/
 data/
 # Inspect logs
 logs/
+# Generated local eval reports
+artifacts/viewer/
 .env
 
 # So that we can keep personal agent notes

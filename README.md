@@ -43,6 +43,7 @@ uv run inspect eval src/debate_asb/protocols/lone_judge.py --model none --log-mo
 
 uv run inspect view                                   # browse transcripts
 uv run python -m debate_asb.runner logs/<file>.eval   # AUROC, catch rate, credences, cost per run and role
+uv run python -m debate_asb.viewer logs/<file>.eval   # bundle-first standalone HTML report
 ```
 
 - `--model none`: each participant's model comes from task arguments
@@ -62,8 +63,8 @@ Protocols shipped:
 | Full-context judge | `protocols/full_context_judge.py` | Whole codebase in one prompt, no tools, one answer. |
 | Debate | `protocols/simple_debate.py` | Two debaters on opposite sides take turns (investigating privately); a judge decides. |
 | Consultancy | `protocols/consultancy.py` | One consultant argues a (by default random) side; a judge questions it, then decides. |
+| Extract-and-evaluate | `protocols/extract_and_evaluate.py` | Extract ten evidence bundles, debate and judge each independently, then take the maximum bundle credence. |
 | Trusted-vs-untrusted debate | `protocols/t_vs_u_debate.py` | Debate where one debater is told the sabotage and secretly works for a "not sabotaged" verdict; the judge knows which debater is untrusted. MonitoringBench only, for now. |
-| Extract-and-evaluate | `protocols/extract_and_evaluate.py` | **Deliberate stub**: mentee work. |
 
 ## How the code is organised
 
@@ -73,6 +74,7 @@ src/debate_asb/
   protocols/          one file per protocol; start by reading lone_judge.py
   artifacts/          Codebase, Trajectory: primitives usable directly or as participant tools
   datasets/           ASB (codebases), MonitoringBench (trajectories)
+  viewer/             bundle-first HTML reports for complete or partial eval logs
   models.py           ModelSpec (pinned provider), Participant, Side
   prompts/            participant prompts, one folder per setting; provenance in prompts/README.md
 docker/               the code-execution sandbox
@@ -255,6 +257,20 @@ The preset uses fixed sample UUIDs. Fetching is additive, so omit
 `sample_ids=pilot_v1` only when you want to run every locally available trajectory.
 
 ## Reading results
+
+For extract-and-evaluate runs, generate a local report that groups evidence,
+debate turns, judge output and tool activity by bundle:
+
+```bash
+uv run python -m debate_asb.viewer logs/<file>.eval
+# writes artifacts/viewer/<file>.html; override with -o path/to/report.html
+```
+
+The report opens in blind mode. Its explicit rubric reveal includes the ASB
+description, claimed impact and location, acceptable fixes, tags and normalized
+location hints. These are labeled as potentially stale orientation aids and are
+never used for extraction scoring. Partial and failed runs retain whatever
+stages completed before the error.
 
 - **There's no published ASB number for our exact setting.** ASB's headline
   0.77 AUROC (Gemini 3.1 Pro) is with full code execution, averaged per sample
