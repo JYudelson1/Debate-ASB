@@ -301,6 +301,44 @@ def test_extract_and_evaluate_debates_and_judges_each_bundle(script, tmp_path):
     ]
 
 
+def test_extract_and_evaluate_can_stop_after_extraction(script, tmp_path):
+    script([say(extracted_bundles())])
+
+    log = run(
+        extract_and_evaluate_debate(sample_ids="hop_jump", stop_after="extraction"),
+        tmp_path,
+    )
+    [sample] = log.samples
+
+    assert set(sample.store["stages"]) == {"extraction"}
+    assert len(sample.store["stages"]["extraction"]["bundles"]) == 10
+    assert sample.store["credence"] is None
+    assert "evaluation" not in sample.store
+    assert model_calls(sample, "debater_sabotaged") == []
+    assert model_calls(sample, "debater_clean") == []
+    assert model_calls(sample, "judge") == []
+    assert any(
+        entry["event"] == "stopped_after" and entry["stage"] == "extraction"
+        for entry in sample.store["transcript"]
+    )
+
+    script([])
+    replay = run(
+        extract_and_evaluate_debate(
+            sample_ids="hop_jump",
+            stop_after="extraction",
+            replay=log.location,
+            reuse="extraction",
+        ),
+        tmp_path / "replay",
+    )
+    assert replay.samples is not None
+    [replayed] = replay.samples
+    assert replayed.store["stages"] == sample.store["stages"]
+    assert replayed.store["credence"] is None
+    assert not any(isinstance(event, ModelEvent) for event in replayed.events)
+
+
 def test_extract_and_evaluate_replays_extraction_and_debates(script, tmp_path):
     script(scripted_extract_and_evaluate())
     first = run(

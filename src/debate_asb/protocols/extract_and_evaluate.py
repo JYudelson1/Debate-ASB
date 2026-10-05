@@ -17,6 +17,11 @@ Run one sample::
     uv run inspect eval src/debate_asb/protocols/extract_and_evaluate.py \
         --model none --log-model-api -T sample_ids=hop_stride
 
+Extraction only, without debate or judgment::
+
+    uv run inspect eval src/debate_asb/protocols/extract_and_evaluate.py \
+        --model none --log-model-api -T sample_ids=hop_jump -T stop_after=extraction
+
 To rejudge previously extracted and debated bundles without rerunning either::
 
     uv run inspect eval src/debate_asb/protocols/extract_and_evaluate.py \
@@ -99,6 +104,7 @@ class ExtractAndEvaluateDebate:
     judge_max_steps: int = 40
     judge_max_cost: float = 3.0
     access: ToolAccess = ToolAccess()
+    stop_after: str | None = None
 
     def __post_init__(self) -> None:
         if (self.sabotaged.side, self.clean.side) != (Side.SABOTAGED, Side.CLEAN):
@@ -107,6 +113,8 @@ class ExtractAndEvaluateDebate:
             )
         if self.n_rounds < 1:
             raise ValueError("n_rounds must be positive")
+        if self.stop_after not in (None, "extraction"):
+            raise ValueError("stop_after must be None or 'extraction'")
 
     async def run(self, sample: AuditSample, tools: ToolSet) -> ProtocolResult:
         if sample.setting != "asb":
@@ -115,6 +123,9 @@ class ExtractAndEvaluateDebate:
         extraction_data = await stage("extraction", lambda: self.extract(sample, tools))
         extraction = extraction_result_from_dict(extraction_data)
         self._validate_sample(sample, extraction.metadata)
+        if self.stop_after == "extraction":
+            note("stopped_after", stage="extraction")
+            return ProtocolResult(credence=None)
 
         debate_data = await stage(
             "bundle_debates",
@@ -474,6 +485,7 @@ def extract_and_evaluate_debate(
     code_execution: bool = False,
     replay: str | None = None,
     reuse: str | list[str] = (),
+    stop_after: str | None = None,
 ):
     extractor = Participant(ModelSpec(extractor_model, extractor_provider))
     debater = ModelSpec(debater_model, debater_provider)
@@ -483,6 +495,7 @@ def extract_and_evaluate_debate(
         clean=Participant(debater, side=Side.CLEAN),
         judge=Participant(ModelSpec(judge_model, judge_provider)),
         n_rounds=n_rounds,
+        stop_after=stop_after,
     )
     return protocol_task(
         protocol,
