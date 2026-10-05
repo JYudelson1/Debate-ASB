@@ -1,6 +1,10 @@
+import json
+from html.parser import HTMLParser
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from inspect_ai.log import EvalLog
 
 from debate_asb.protocol import OUT_OF_TOOL_CALLS
 from debate_asb.protocols.simple_debate import _activity_span_name
@@ -21,7 +25,7 @@ def _diagnostics(report, code: str) -> list:
 
 
 def test_adapter_groups_partial_results_by_bundle() -> None:
-    report = adapt_log(_log_fixture(), "/tmp/example.eval")
+    report = adapt_log(cast(EvalLog, _log_fixture()), "/tmp/example.eval")
 
     sample = report.samples[0]
     assert sample.stage_progress == {
@@ -40,7 +44,7 @@ def test_adapter_groups_partial_results_by_bundle() -> None:
 
 
 def test_flattened_tool_history_is_located_at_its_turn() -> None:
-    report = adapt_log(_log_fixture(), "/tmp/example.eval")
+    report = adapt_log(cast(EvalLog, _log_fixture()), "/tmp/example.eval")
 
     [found] = _diagnostics(report, "flattened_tool_history")
     assert found.severity == "warning"
@@ -53,7 +57,7 @@ def test_text_only_tool_call_argument_is_an_error() -> None:
     turn["argument"] = '[called read_file({"path": "PAPER.md"})]'
     log.samples[0].store["stages"]["bundle_judgments"][0]["turns"] = [turn]
 
-    report = adapt_log(log, "/tmp/example.eval")
+    report = adapt_log(cast(EvalLog, log), "/tmp/example.eval")
 
     [found] = _diagnostics(report, "text_only_tool_call")
     assert found.severity == "error"
@@ -70,7 +74,7 @@ def test_argument_quoting_a_tool_call_is_only_a_warning() -> None:
     }
     log.samples[0].store["stages"]["bundle_judgments"][0]["turns"] = [turn]
 
-    report = adapt_log(log, "/tmp/example.eval")
+    report = adapt_log(cast(EvalLog, log), "/tmp/example.eval")
 
     assert not _diagnostics(report, "text_only_tool_call")
     assert _diagnostics(report, "partial_text_tool_call")[0].severity == "warning"
@@ -84,7 +88,7 @@ def test_missing_credence_and_tool_budget_are_flagged() -> None:
         Event(event="model", span_id="inner", input=[out_of_budget], data={})
     )
 
-    report = adapt_log(log, "/tmp/example.eval")
+    report = adapt_log(cast(EvalLog, log), "/tmp/example.eval")
 
     [missing] = _diagnostics(report, "missing_credence")
     assert (missing.bundle, missing.participant) == (1, "judge")
@@ -96,7 +100,7 @@ def test_sample_error_is_a_sample_level_diagnostic() -> None:
     log = _log_fixture()
     log.samples[0].error = {"message": "boom\nmore", "traceback": "Traceback..."}
 
-    report = adapt_log(log, "/tmp/example.eval")
+    report = adapt_log(cast(EvalLog, log), "/tmp/example.eval")
 
     [found] = _diagnostics(report, "sample_error")
     assert found.bundle is None
@@ -108,7 +112,7 @@ def test_repeated_diagnostics_at_one_location_merge_into_a_count() -> None:
     log = _log_fixture()
     log.samples[0].events.append(log.samples[0].events[-1])
 
-    report = adapt_log(log, "/tmp/example.eval")
+    report = adapt_log(cast(EvalLog, log), "/tmp/example.eval")
 
     [found] = _diagnostics(report, "flattened_tool_history")
     assert found.count == 2
@@ -160,17 +164,41 @@ def test_honest_rubric_has_no_sabotage_annotation() -> None:
     assert context["sabotage"] is None
 
 
-def test_html_report_is_self_contained_and_escapes_script_end() -> None:
+@pytest.mark.parametrize(
+    "observation",
+    ["</script><script>alert(1)</script>", "<!--<script>text</script>"],
+)
+def test_html_report_is_self_contained_and_escapes_script_end(observation: str) -> None:
     log = _log_fixture()
     log.samples[0].store["stages"]["extraction"]["bundles"][0]["observation"] = (
-        "</script><script>alert(1)</script>"
+        observation
     )
 
-    html = render_report(adapt_log(log, "/tmp/example.eval"))
+    html = render_report(adapt_log(cast(EvalLog, log), "/tmp/example.eval"))
 
     assert "Evidence bundles" in html
     assert "bundle-canvas" in html
-    assert "<\\/script><script>alert(1)<\\/script>" in html
+
+    class EmbeddedData(HTMLParser):
+        in_data = False
+        payload = ""
+
+        def handle_starttag(self, tag, attrs):
+            self.in_data = tag == "script" and dict(attrs).get("id") == "report-data"
+
+        def handle_endtag(self, tag):
+            if tag == "script":
+                self.in_data = False
+
+        def handle_data(self, data):
+            if self.in_data:
+                self.payload += data
+
+    parser = EmbeddedData()
+    parser.feed(html)
+    assert "<" not in parser.payload
+    decoded = json.loads(parser.payload)
+    assert decoded["samples"][0]["bundles"][0]["observation"] == observation
     assert "/* REPORT_CSS */" not in html
     assert "/* REPORT_JS */" not in html
 

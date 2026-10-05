@@ -18,7 +18,7 @@ def render_report(report: ReportView) -> str:
     template = (package / "report.html").read_text()
     css = (package / "report.css").read_text()
     javascript = "\n\n".join((package / name).read_text() for name in SCRIPTS)
-    data = json.dumps(report.to_dict(), ensure_ascii=False).replace("</", "<\\/")
+    data = json.dumps(report.to_dict(), ensure_ascii=False).replace("<", "\\u003c")
     return (
         template.replace("/* REPORT_CSS */", css)
         .replace("/* REPORT_JS */", javascript)

@@ -58,6 +58,17 @@ function initialize() {
 
 function render() {
   const sample = currentSample();
+  if (!sample) {
+    replaceChildren("run-tags", [tag(report.status.toUpperCase())]);
+    replaceChildren("bundle-canvas", [element("p", {
+      className: "empty", text: "No samples were retained in this log.",
+    })]);
+    byId("provenance-json").textContent = pretty(report);
+    for (const id of ["sample-select", "bundle-search", "reveal-ground-truth"]) {
+      byId(id).disabled = true;
+    }
+    return;
+  }
   renderRunTags(sample);
   renderSampleDiagnostics(sample);
   renderProgress(sample);
