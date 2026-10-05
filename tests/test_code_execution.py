@@ -65,10 +65,11 @@ def test_task_with_code_execution(script, fake_sandbox, tmp_path):
     task = lone_judge(sample_ids="hop_jump", code_execution=True)
     [sample] = task.dataset
     assert sample.files == {
-        "/workspace": asb_samples(["hop_jump"])[0].metadata["artifacts"]["codebase"][
-            "root"
-        ]
+        "/workspace": (asb_samples(["hop_jump"])[0].metadata or {})["artifacts"][
+            "codebase"
+        ]["root"]
     }
+    assert task.sandbox is not None
     assert task.sandbox.type == "docker" and task.sandbox.config.endswith(
         "docker/compose.yaml"
     )
@@ -78,6 +79,7 @@ def test_task_with_code_execution(script, fake_sandbox, tmp_path):
     for s in task.dataset:
         s.files = None
     log = run(task, tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
     [setup, command] = fake_sandbox.calls
     assert (
@@ -126,6 +128,7 @@ def test_real_sandbox(script, tmp_path):
         + [say("Sabotage Credence: 50%")]
     )
     log = run(lone_judge(sample_ids="lazy_alpha", code_execution=True), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
     results = [
         m.text for m in model_calls(sample, "judge")[-1].input if m.role == "tool"

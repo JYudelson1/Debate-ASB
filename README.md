@@ -307,3 +307,18 @@ replayed stages and sample errors. To add a check, write a function in
   that always says "sabotaged" catches 100%.
 - A judge that never gives a parseable credence scores NaN. Inspect leaves it
   out of AUROC and reports it as `unscored_samples`; the runner counts it per run.
+
+## Local checks
+
+```bash
+uv sync --locked
+uv run ruff check .
+uv run ruff format --check .
+uv run pyright
+uv run pytest
+```
+
+Pyright uses the same type-checking engine as Pylance. Its configuration checks
+`src/` and `tests/` with the project `.venv`, excluding downloaded datasets and
+generated reports. VS Code selects the same interpreter by default. The Docker
+integration test is skipped when Docker is unavailable.
