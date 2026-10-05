@@ -104,6 +104,7 @@ class Debate:
 
         for round in range(1, self.n_rounds + 1):
             for debater, role in debaters:
+                assert debater.side is not None
                 messages = conversations[role]
                 messages.append(
                     ChatMessageUser(
@@ -195,6 +196,7 @@ class Debate:
     def _debater_prompt(
         self, sample: AuditSample, debater: Participant, access: Access
     ) -> str:
+        assert debater.side is not None
         return debater.system_prompt or sample.prompts.debater(
             debater.side,
             self.n_rounds,
@@ -249,7 +251,7 @@ def debate(
     n_rounds: int = 2,
     code_execution: bool = False,
     replay: str | None = None,
-    reuse: str | list[str] = (),
+    reuse: str | list[str] | tuple[str, ...] = (),
 ):
     debater = ModelSpec(debater_model, debater_provider)
     protocol = Debate(

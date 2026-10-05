@@ -19,7 +19,10 @@ from debate_asb.datasets import ASB_ROOT, asb_samples
 @pytest.fixture
 def hop_jump() -> Codebase:
     [sample] = asb_samples(["hop_jump"])
-    return load_artifacts(sample.metadata["artifacts"])["codebase"]
+    assert sample.metadata is not None
+    codebase = load_artifacts(sample.metadata["artifacts"])["codebase"]
+    assert isinstance(codebase, Codebase)
+    return codebase
 
 
 @needs_asb
