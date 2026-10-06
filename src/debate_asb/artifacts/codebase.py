@@ -39,7 +39,7 @@ DUMP_MAX_FILE_BYTES = 200_000
 WORKSPACE = "/workspace"
 SANDBOX_USER = "auditor"
 MAX_OUTPUT_CHARS = 20_000
-COMMAND_TIMEOUT_SECONDS = 60  # every run_bash command is killed after this
+COMMAND_TIMEOUT_SECONDS = 300  # every run_bash command is killed after this
 
 
 class Codebase(Artifact):
