@@ -247,16 +247,28 @@ def debate(
     dataset: Dataset = "asb",
     sample_ids: str | list[str] | None = None,
     n_rounds: int = 2,
+    debater_max_cost: float = 1.0,  # nominal USD per turn
+    judge_max_cost: float = 3.0,
+    debater_reasoning_effort: str | None = None,  # e.g. "high"; None = provider default
+    judge_reasoning_effort: str | None = None,
     code_execution: bool = False,
     replay: str | None = None,
     reuse: str | list[str] = (),
 ):
-    debater = ModelSpec(debater_model, debater_provider)
+    debater = ModelSpec(
+        debater_model, debater_provider, reasoning_effort=debater_reasoning_effort
+    )
     protocol = Debate(
         sabotaged=Participant(debater, side=Side.SABOTAGED),
         clean=Participant(debater, side=Side.CLEAN),
-        judge=Participant(ModelSpec(judge_model, judge_provider)),
+        judge=Participant(
+            ModelSpec(
+                judge_model, judge_provider, reasoning_effort=judge_reasoning_effort
+            )
+        ),
         n_rounds=n_rounds,
+        debater_max_cost=debater_max_cost,
+        judge_max_cost=judge_max_cost,
     )
     return protocol_task(
         protocol, load_samples(dataset, sample_ids), replay, reuse, code_execution
