@@ -1,0 +1,4 @@
+interface:
+  display_name: "Extraction Failure Analysis"
+  short_description: "Trace inspection patterns and sabotage coverage"
+  default_prompt: "Use $extraction-analysis to analyze these Debate-ASB extraction logs and report sabotage coverage and inspection patterns."

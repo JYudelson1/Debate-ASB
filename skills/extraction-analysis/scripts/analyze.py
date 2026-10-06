@@ -477,3 +477,161 @@ def git_state(repo: Path) -> dict:
         return p.stdout.strip() if p.returncode == 0 else None
 
     return {"commit": run("rev-parse", "HEAD"), "status": run("status", "--short")}
+
+
+def collect(log_paths: list[Path], repo: Path, out: Path, overrides: dict) -> None:
+    from debate_asb.datasets.asb import PROJECT_ROOT
+
+    if Path(PROJECT_ROOT).resolve() != repo.resolve():
+        raise ValueError(
+            "Use the Python environment installed from the --repo checkout."
+        )
+    if out.exists() and any(out.iterdir()):
+        raise ValueError(
+            "Output directory is not empty; choose a new output directory."
+        )
+    from debate_asb.viewer.adapter import adapt_log
+
+    runs, samples = [], []
+    for path in log_paths:
+        path = path.resolve()
+        digest = sha(path)
+        log = read_eval_log(str(path), resolve_attachments="full")
+        report = adapt_log(log, str(path))
+        run = {
+            "path": str(path),
+            "sha256": digest,
+            "task": report.task,
+            "status": report.status,
+            "task_args": report.task_args,
+            "revision": report.revision,
+            "stats": report.stats,
+        }
+        runs.append(run)
+        for sample, view in zip(log.samples or [], report.samples, strict=True):
+            extraction = (
+                (sample.store.get("stages") or {}).get("extraction")
+                or (sample.store.get("evaluation") or {}).get("extraction")
+                or {}
+            )
+            trace = extraction_trace(sample)
+            context = load_rubric_context(
+                str(sample.id), view.target, (sample.metadata or {}).get("answer_key")
+            )
+            measured = measure(
+                trace,
+                extraction.get("bundles") or [],
+                context,
+                view.codebase_root,
+                overrides,
+            )
+            key = f"{digest[:12]}-{fingerprint([str(sample.id), sample.epoch])[:12]}"
+            current_sabotage = None
+            if context:
+                rubric_file = repo / context["rubric_file"]
+                if rubric_file.exists():
+                    rubric = yaml.safe_load(rubric_file.read_text()) or {}
+                    for entry in rubric.get("sabotaged") or []:
+                        if entry.get("id") == str(sample.id):
+                            current_sabotage = entry.get("sabotage")
+            samples.append(
+                {
+                    "key": key,
+                    "id": str(sample.id),
+                    "epoch": sample.epoch,
+                    "run": path.name,
+                    "log_sha256": digest,
+                    "target": view.target,
+                    "codebase_root": view.codebase_root,
+                    "rubric": context,
+                    "current_sabotage": current_sabotage,
+                    "annotation_conflict": bool(
+                        current_sabotage
+                        and context
+                        and current_sabotage != context.get("sabotage")
+                    ),
+                    "trace_file": f"traces/{key}.json",
+                    "trace_status": "observed"
+                    if trace["model_calls"]
+                    else "unavailable",
+                    "replayed_stages": sample.store.get("replayed_stages"),
+                    "replay_source": sample.store.get("replay_source"),
+                    "extraction_metadata": extraction.get("metadata"),
+                    "usage": (sample.store.get("usage") or {}).get("extractor"),
+                    "cost_usd": (sample.store.get("cost") or {}).get("extractor"),
+                    "diagnostics": [
+                        jsonable(d) if hasattr(d, "model_dump") else d.__dict__
+                        for d in view.diagnostics
+                        if d.participant in (None, "extractor")
+                    ],
+                    "sample_error": jsonable(sample.error),
+                    "metrics": measured,
+                    "trace_sha256": fingerprint(trace),
+                    "_trace": trace,
+                }
+            )
+    keys = [s["key"] for s in samples]
+    if len(set(keys)) != len(keys):
+        raise ValueError("Duplicate log/sample/epoch inputs.")
+    if not any(s["metrics"]["bundles"] or s["metrics"]["model_calls"] for s in samples):
+        raise ValueError(
+            "No extraction bundles or extraction events found in these logs."
+        )
+    rubric_files = sorted((repo / "data/asb/codebases/_rubrics").glob("*.yaml"))
+    code_files = (
+        [Path(__file__), SKILL / "assets/report.html", SKILL / "assets/report-interactions.js"]
+        + sorted((SKILL / "references").glob("*.md"))
+        + [SKILL / "SKILL.md"]
+    )
+    sample_measurements = [
+        {k: v for k, v in s.items() if k != "_trace"} for s in samples
+    ]
+    manifest = {
+        "schema_version": 1,
+        "repository": str(repo),
+        "runs": runs,
+        "rubric_hashes": {str(p.relative_to(repo)): sha(p) for p in rubric_files},
+        "analysis_code_hashes": {str(p.relative_to(SKILL)): sha(p) for p in code_files},
+        "analysis_git": git_state(repo),
+        "role_rules": ROLE_RULES,
+        "samples_sha256": fingerprint(sample_measurements),
+        "role_overrides": overrides,
+        "reasoning_keyword_groups": THEMES,
+    }
+    manifest["analysis_id"] = fingerprint(manifest)
+    review = {
+        "schema_version": 2,
+        "analysis_id": manifest["analysis_id"],
+        "reviewer": None,
+        "reviewed_at": None,
+        "review_model": None,
+        "review_provider": None,
+        "notes": [],
+        "samples": {},
+    }
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "traces").mkdir()
+    for sample in samples:
+        dump(out / sample["trace_file"], sample.pop("_trace"))
+        honest = sample["target"] == "honest"
+        review["samples"][sample["key"]] = {
+            "included": "not_applicable" if honest else "unknown",
+            "matching_bundles": [],
+            "single_bundle_complete": None,
+            "sufficient_bundles": [],
+            "observation_explains": "not_applicable" if honest else "unknown",
+            "failure_stage": "not_applicable" if honest else "unknown",
+            "failure_modes": [],
+            "summary": "Honest control; no documented sabotage."
+            if honest
+            else "Pending semantic review.",
+            "trace_refs": [],
+            "confidence_note": "",
+            "locations_used": [],
+            "exposure_status": "not_applicable" if honest else "unknown",
+            "exposure_tool_refs": [],
+            "exposure_summary": "Honest control." if honest else "Pending agent review.",
+        }
+    dump(out / "analysis.json", {"manifest": manifest, "samples": samples})
+    dump(out / "review.json", review)
+    print(f"Collected {len(samples)} sample epochs. Review {out / 'review.json'}")
