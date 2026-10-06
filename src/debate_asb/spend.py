@@ -19,6 +19,7 @@ de-duplicated in the log, so this doesn't blow up log size.)
 import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 from inspect_ai.event import ModelEvent, SpanBeginEvent
 from inspect_ai.log import EvalLog, read_eval_log
@@ -73,9 +74,11 @@ def sample_spend(events: list) -> Spend:
         if event.call is None:
             spend.unlogged_calls += 1
             continue
-        request = event.call.request or {}
-        response = event.call.response or {}
-        role = roles.get(event.span_id, UNATTRIBUTED)
+        # OpenRouter API payloads are JSON objects; Inspect's generic response
+        # annotation also permits scalar JSON for other providers.
+        request = cast(dict[str, Any], event.call.request or {})
+        response = cast(dict[str, Any], event.call.response or {})
+        role = roles.get(event.span_id or "", UNATTRIBUTED)
         spend.by_role[role] += (response.get("usage") or {}).get("cost") or 0.0
         pin = request.get("provider") or (request.get("extra_body") or {}).get(
             "provider"

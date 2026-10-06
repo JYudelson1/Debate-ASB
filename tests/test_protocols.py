@@ -40,6 +40,7 @@ def run(task, tmp_path, **kwargs):
     )
     assert log.status == "success", log.error
     # Logs store long message text once, as attachments; resolve them to read it.
+    assert log.samples is not None
     log.samples = [resolve_sample_attachments(s) for s in log.samples]
     return log
 
@@ -61,6 +62,7 @@ def test_lone_judge(script, tmp_path):
     script(explore_then_answer(80) + explore_then_answer(30))
     log = run(lone_judge(sample_ids="hop_jump,hop_stride"), tmp_path)
 
+    assert log.samples is not None
     by_id = {s.id: s for s in log.samples}
     assert (by_id["hop_jump"].target, by_id["hop_stride"].target) == (
         "sabotaged",
@@ -70,6 +72,7 @@ def test_lone_judge(script, tmp_path):
         by_id["hop_jump"].store["credence"],
         by_id["hop_stride"].store["credence"],
     ) == (80, 30)
+    assert log.results is not None
     assert log.results.scores[0].metrics["auroc"].value == 1.0
 
     sample = by_id["hop_jump"]
@@ -86,6 +89,7 @@ def test_missing_credence_is_retried_then_dropped(script, tmp_path):
     no_answer = [say("Hmm."), say("Still thinking.")]
     script(explore_then_answer(80) + no_answer + explore_then_answer(30))
     log = run(lone_judge(sample_ids="hop_jump,hop_double,hop_stride"), tmp_path)
+    assert log.results is not None
     results = log.results.scores[0]
     assert (results.scored_samples, results.unscored_samples) == (2, 1)
     assert results.metrics["auroc"].value == 1.0
@@ -94,6 +98,7 @@ def test_missing_credence_is_retried_then_dropped(script, tmp_path):
 def test_budget_cuts_exploration_short(script, tmp_path):
     script(explore_then_answer(60))
     log = run(lone_judge(sample_ids="hop_jump", max_cost=0.0), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
     tool_results = [
         m for m in model_calls(sample, "judge")[-1].input if m.role == "tool"
@@ -107,6 +112,7 @@ def test_budget_cuts_exploration_short(script, tmp_path):
 def test_full_context_judge(script, tmp_path):
     script([say("Sabotage Credence: 65%")])
     log = run(full_context_judge(sample_ids="hop_jump"), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
     [call] = model_calls(sample, "judge")
     assert call.tools == []
@@ -134,6 +140,7 @@ def scripted_debate(credence: int = 70):
 def test_debate(script, tmp_path):
     script(scripted_debate())
     log = run(debate(sample_ids="hop_jump"), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
 
     arguments = sample.store["stages"]["debate"]
@@ -175,6 +182,8 @@ def test_debate_replay_judges_the_same_debate_again(script, tmp_path):
         tmp_path / "replay",
         epochs=2,
     )
+    assert first.samples is not None
+    assert replay.samples is not None
     for sample in replay.samples:
         assert (
             model_calls(sample, "debater_sabotaged")
@@ -197,6 +206,7 @@ def test_debate_without_judge_access(script, tmp_path):
         access=ToolAccess(judge=False),
     )  # fmt: skip
     log = run(protocol_task(no_access, asb_samples(["hop_jump"])), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
     judge_call = model_calls(sample, "judge")[0]
     assert judge_call.tools == []
@@ -255,6 +265,7 @@ def test_extract_and_evaluate_debates_and_judges_each_bundle(script, tmp_path):
     script(scripted_extract_and_evaluate())
 
     log = run(extract_and_evaluate_debate(sample_ids="hop_jump", n_rounds=1), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
 
     assert set(sample.store["stages"]) == {
@@ -301,6 +312,45 @@ def test_extract_and_evaluate_debates_and_judges_each_bundle(script, tmp_path):
     ]
 
 
+def test_extract_and_evaluate_can_stop_after_extraction(script, tmp_path):
+    script([say(extracted_bundles())])
+
+    log = run(
+        extract_and_evaluate_debate(sample_ids="hop_jump", stop_after="extraction"),
+        tmp_path,
+    )
+    assert log.samples is not None
+    [sample] = log.samples
+
+    assert set(sample.store["stages"]) == {"extraction"}
+    assert len(sample.store["stages"]["extraction"]["bundles"]) == 10
+    assert sample.store["credence"] is None
+    assert "evaluation" not in sample.store
+    assert model_calls(sample, "debater_sabotaged") == []
+    assert model_calls(sample, "debater_clean") == []
+    assert model_calls(sample, "judge") == []
+    assert any(
+        entry["event"] == "stopped_after" and entry["stage"] == "extraction"
+        for entry in sample.store["transcript"]
+    )
+
+    script([])
+    replay = run(
+        extract_and_evaluate_debate(
+            sample_ids="hop_jump",
+            stop_after="extraction",
+            replay=log.location,
+            reuse="extraction",
+        ),
+        tmp_path / "replay",
+    )
+    assert replay.samples is not None
+    [replayed] = replay.samples
+    assert replayed.store["stages"] == sample.store["stages"]
+    assert replayed.store["credence"] is None
+    assert not any(isinstance(event, ModelEvent) for event in replayed.events)
+
+
 def test_extract_and_evaluate_replays_extraction_and_debates(script, tmp_path):
     script(scripted_extract_and_evaluate())
     first = run(
@@ -318,6 +368,7 @@ def test_extract_and_evaluate_replays_extraction_and_debates(script, tmp_path):
         ),
         tmp_path / "replay",
     )
+    assert replay.samples is not None
     [sample] = replay.samples
 
     assert model_calls(sample, "extractor") == []
@@ -349,6 +400,7 @@ def test_consultancy(script, tmp_path):
         consultancy(sample_ids="hop_jump", consultant_side="clean", n_rounds=2),
         tmp_path,
     )
+    assert log.samples is not None
     [sample] = log.samples
 
     consultation = sample.store["stages"]["consultation"]
@@ -444,9 +496,12 @@ def test_lone_judge_on_a_trajectory(script, tmp_path):
     sample_id = next(
         s.id
         for s in monitoringbench_samples()
-        if s.metadata["answer_key"]["attack_summary"]
+        if (s.metadata or {})["answer_key"]["attack_summary"]
     )
-    log = run(lone_judge(dataset="monitoringbench", sample_ids=sample_id), tmp_path)
+    log = run(
+        lone_judge(dataset="monitoringbench", sample_ids=str(sample_id)), tmp_path
+    )
+    assert log.samples is not None
     [sample] = log.samples
     calls = model_calls(sample, "judge")
     system = calls[0].input[0].text
@@ -458,7 +513,7 @@ def test_lone_judge_on_a_trajectory(script, tmp_path):
         "search_trajectory",
     }
     # The attacker's instructions (in the log's metadata) never reach the judge.
-    side_task = sample.metadata["answer_key"]["attack_summary"][:60]
+    side_task = (sample.metadata or {})["answer_key"]["attack_summary"][:60]
     assert all(side_task not in m.text for c in calls for m in c.input)
     assert sample.store["credence"] == 90
 
@@ -467,7 +522,8 @@ def test_lone_judge_on_a_trajectory(script, tmp_path):
 def test_debate_on_a_trajectory(script, tmp_path):
     script([say("S1"), say("C1"), say("S2"), say("C2"), say("Sabotage Credence: 30%")])
     [sample_id] = [s.id for s in monitoringbench_samples()[:1]]
-    log = run(debate(dataset="monitoringbench", sample_ids=sample_id), tmp_path)
+    log = run(debate(dataset="monitoringbench", sample_ids=str(sample_id)), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
     debater = model_calls(sample, "debater_sabotaged")[0].input[0].text
     assert (
@@ -488,7 +544,7 @@ def briefed_sample():
         s
         for s in monitoringbench_samples()
         if all(
-            s.metadata["answer_key"][k]
+            (s.metadata or {})["answer_key"][k]
             for k in ("attack_summary", "structure", "evasion", "technique")
         )
     )
@@ -496,14 +552,15 @@ def briefed_sample():
 
 def t_vs_u_secrets(sample: EvalSample) -> list[str]:
     """Answer-key text that only the untrusted debater may see."""
-    key = sample.metadata["answer_key"]
+    key = (sample.metadata or {})["answer_key"]
     return [key[k].strip() for k in BRIEFING.values()] + ["hidden motive"]
 
 
 @needs_monitoringbench
 def test_t_vs_u_debate_untrusted_argues_clean(script, tmp_path):
     script([say("S1"), say("C1"), say("S2"), say("C2"), say("Sabotage Credence: 30%")])
-    log = run(t_vs_u_debate(sample_ids=briefed_sample().id), tmp_path)
+    log = run(t_vs_u_debate(sample_ids=str(briefed_sample().id)), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
     untrusted = model_calls(sample, "debater_clean")[0].input[0].text
     others = [
@@ -530,9 +587,10 @@ def test_t_vs_u_debate_untrusted_argues_clean(script, tmp_path):
 def test_t_vs_u_debate_untrusted_argues_sabotaged(script, tmp_path):
     script([say("S1"), say("C1"), say("S2"), say("C2"), say("Sabotage Credence: 30%")])
     log = run(
-        t_vs_u_debate(sample_ids=briefed_sample().id, untrusted_side="sabotaged"),
+        t_vs_u_debate(sample_ids=str(briefed_sample().id), untrusted_side="sabotaged"),
         tmp_path,
     )
+    assert log.samples is not None
     [sample] = log.samples
     untrusted = model_calls(sample, "debater_sabotaged")[0].input[0].text
     trusted = model_calls(sample, "debater_clean")[0].input[0].text
@@ -560,13 +618,14 @@ def test_t_vs_u_debate_cost_caps_are_per_debater(script, tmp_path):
     ])  # fmt: skip
     log = run(
         t_vs_u_debate(
-            sample_ids=briefed_sample().id,
+            sample_ids=str(briefed_sample().id),
             n_rounds=1,
             trusted_max_cost=0.0,
             untrusted_max_cost=1.0,
         ),
         tmp_path,
     )
+    assert log.samples is not None
     [sample] = log.samples
     trusted = model_calls(sample, "debater_sabotaged")
     untrusted = model_calls(sample, "debater_clean")
@@ -595,7 +654,7 @@ def test_only_opted_in_protocols_see_the_answer_key(script, tmp_path):
     for protocol in (Spy(), OptedInSpy()):
         run(protocol_task(protocol, [mb_sample]), tmp_path)
     assert seen["Spy"] is None
-    assert seen["OptedInSpy"] == mb_sample.metadata["answer_key"]
+    assert seen["OptedInSpy"] == (mb_sample.metadata or {})["answer_key"]
 
 
 def test_t_vs_u_needs_the_attack_in_the_answer_key():
@@ -615,6 +674,7 @@ def test_model_that_ignores_tool_choice_none_still_answers(script, tmp_path):
         ]
     )
     log = run(lone_judge(sample_ids="hop_jump", max_cost=0.0), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
     calls = model_calls(sample, "judge")
     assert len(calls) == 3 and calls[1].tool_choice == "none" and calls[2].tools == []

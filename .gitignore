@@ -15,9 +15,13 @@ wheels/
 data/
 # Inspect logs
 logs/
-# Generated local eval reports
+# Generated local reports and run-specific extraction review ledgers
 artifacts/viewer/
+artifacts/extraction-analysis/
 .env
 
 # So that we can keep personal agent notes
 AGENTS.md
+
+# macOS filesystem metadata
+.DS_Store

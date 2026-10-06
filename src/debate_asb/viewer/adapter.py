@@ -10,6 +10,7 @@ from typing import Any
 
 from inspect_ai.log import EvalLog, read_eval_log
 
+from debate_asb.viewer.diagnostics import DiagnosticContext, diagnose
 from debate_asb.viewer.markdown import markdown_text
 from debate_asb.viewer.rubrics import load_rubric_context
 from debate_asb.viewer.schema import (
@@ -20,8 +21,9 @@ from debate_asb.viewer.schema import (
     TraceView,
     TurnView,
 )
+from debate_asb.viewer.spans import Activity, SpanIndex
 
-BUNDLE_SPAN = re.compile(r"^bundle/(?P<number>\d+)/(?:debate|judgment)(?:/|$)")
+TRACE_EVENTS = {"model", "tool", "error"}
 
 
 def load_report(log_path: str | Path) -> ReportView:
@@ -51,9 +53,11 @@ def _adapt_sample(sample: Any) -> SampleView:
     evaluation = _as_dict(store.get("evaluation"))
     extraction = _as_dict(stages.get("extraction") or evaluation.get("extraction"))
     transcript = list(store.get("transcript") or [])
+    events = list(sample.events or [])
+    spans = SpanIndex(events)
 
     bundles = _bundle_records(extraction, stages, evaluation, transcript)
-    traces = _bundle_traces(sample.events or [])
+    traces = _bundle_traces(events, spans)
     bundle_views = tuple(
         _bundle_view(record, traces.get(record["number"], ()))
         for record in sorted(bundles.values(), key=lambda item: item["number"])
@@ -62,6 +66,16 @@ def _adapt_sample(sample: Any) -> SampleView:
     metadata = _as_dict(sample.metadata)
     target = _target_text(sample.target)
     error = _optional_dict(sample.error)
+    diagnostics = diagnose(
+        DiagnosticContext.from_sample(
+            events,
+            spans,
+            transcript,
+            bundle_views,
+            error,
+            store.get("replay_source"),
+        )
+    )
     return SampleView(
         id=str(sample.id),
         epoch=int(sample.epoch),
@@ -79,6 +93,7 @@ def _adapt_sample(sample: Any) -> SampleView:
         ),
         error=error,
         provenance=_provenance(sample, stages, store, transcript),
+        diagnostics=diagnostics,
     )
 
 
@@ -257,43 +272,23 @@ def _provenance(
     }
 
 
-def _bundle_traces(events: list[Any]) -> dict[int, tuple[TraceView, ...]]:
-    spans: dict[str, tuple[str | None, str]] = {}
-    for event in events:
-        if event.event == "span_begin":
-            spans[event.id] = (event.parent_id, event.name)
-
+def _bundle_traces(
+    events: list[Any], spans: SpanIndex
+) -> dict[int, tuple[TraceView, ...]]:
     grouped: dict[int, list[TraceView]] = defaultdict(list)
     for event in events:
-        if event.event not in {"model", "tool", "error"}:
+        if event.event not in TRACE_EVENTS:
             continue
-        trace_name = _trace_name(event.span_id, spans)
-        if trace_name is None:
-            continue
-        match = BUNDLE_SPAN.match(trace_name)
-        if match:
-            grouped[int(match.group("number"))].append(_trace_view(event, trace_name))
+        activity = spans.activity(event.span_id)
+        if activity is not None and activity.bundle is not None:
+            grouped[activity.bundle].append(_trace_view(event, activity))
     return {number: tuple(values) for number, values in grouped.items()}
 
 
-def _trace_name(
-    span_id: str | None, spans: dict[str, tuple[str | None, str]]
-) -> str | None:
-    current = span_id
-    visited: set[str] = set()
-    while current and current not in visited:
-        visited.add(current)
-        parent, name = spans.get(current, (None, ""))
-        if BUNDLE_SPAN.match(name):
-            return name
-        current = parent
-    return None
-
-
-def _trace_view(event: Any, trace_name: str) -> TraceView:
+def _trace_view(event: Any, activity: Activity) -> TraceView:
     data = event.model_dump(exclude_none=True)
     kind = event.event
-    role = "judge" if "/judgment" in trace_name else trace_name.rsplit("/", 1)[-1]
+    role = activity.participant
     if kind == "model":
         output = _as_dict(data.get("output"))
         return TraceView(
