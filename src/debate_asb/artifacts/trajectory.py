@@ -45,6 +45,8 @@ class Trajectory(Artifact):
         sample_uuid: str | None = None,
     ):
         if messages is None:
+            if eval_log is None:
+                raise ValueError("Trajectory needs messages or an eval_log")
             sample = read_eval_log_sample(
                 eval_log, uuid=sample_uuid, resolve_attachments=True
             )

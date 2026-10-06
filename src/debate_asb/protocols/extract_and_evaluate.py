@@ -484,7 +484,7 @@ def extract_and_evaluate_debate(
     n_rounds: int = 2,
     code_execution: bool = False,
     replay: str | None = None,
-    reuse: str | list[str] = (),
+    reuse: str | list[str] | tuple[str, ...] = (),
     stop_after: str | None = None,
 ):
     extractor = Participant(ModelSpec(extractor_model, extractor_provider))
