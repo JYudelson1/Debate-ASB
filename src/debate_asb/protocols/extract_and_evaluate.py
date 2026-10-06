@@ -97,8 +97,8 @@ class ExtractAndEvaluateDebate:
     clean: Participant
     judge: Participant
     n_rounds: int = 2
-    extractor_max_steps: int = 60
-    extractor_max_cost: float = 5.0
+    extractor_max_steps: int = 40
+    extractor_max_cost: float = 4.0
     debater_max_steps: int = 15
     debater_max_cost: float = 1.0
     judge_max_steps: int = 40
