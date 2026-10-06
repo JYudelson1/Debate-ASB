@@ -279,6 +279,25 @@ flattened after a provider rejection, arguments that are only an unexecuted
 replayed stages and sample errors. To add a check, write a function in
 `viewer/diagnostics.py` and list it in `CHECKS`.
 
+For post-hoc extraction coverage and inspection patterns, use the
+[`extraction-analysis` skill](skills/extraction-analysis/SKILL.md). It collects
+executed extraction traces, saves a semantic sabotage review, and renders a
+standalone HTML report with coverage, file/region hotspots and inspection-to-evidence
+flows. It does not run evaluations or change the protocol.
+Run-specific reports, traces, and completed review ledgers remain local under
+`artifacts/extraction-analysis/`; preserve them separately when archiving a run.
+Incomplete extraction traces cannot establish non-exposure; see the skill's
+[documented limitation](skills/extraction-analysis/references/metrics.md#incomplete-extraction-traces).
+
+```bash
+uv run python skills/extraction-analysis/scripts/analyze.py collect \
+    --repo . --log logs/<file>.eval --out artifacts/extraction-analysis/<file>
+# Complete the generated review.json using the skill's review criteria.
+uv run python skills/extraction-analysis/scripts/analyze.py render \
+    --analysis artifacts/extraction-analysis/<file>/analysis.json \
+    --review artifacts/extraction-analysis/<file>/review.json
+```
+
 - **There's no published ASB number for our exact setting.** ASB's headline
   0.77 AUROC (Gemini 3.1 Pro) is with full code execution, averaged per sample
   over 5 runs. Their closest reported regime, `no_experiments` (~0.62 Gemini 3.1
