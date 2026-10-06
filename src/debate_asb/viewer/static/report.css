@@ -14,6 +14,8 @@
   --warning-soft: #f5e8c9;
   --clean: #315d82;
   --sabotaged: #9b423a;
+  --honest: #2e7a3d;
+  --honest-soft: #dcefdc;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
@@ -149,7 +151,9 @@ main {
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
-.bundle-state { color: var(--accent); font-size: 0.72rem; text-transform: uppercase; }
+.bundle-state { color: var(--muted); font-size: 0.72rem; font-weight: 650; text-transform: uppercase; }
+.verdict-sabotaged { color: var(--danger); }
+.verdict-honest { color: var(--honest); }
 
 .canvas { min-height: 600px; padding: 1.1rem; }
 .canvas-header {
@@ -173,6 +177,9 @@ main {
   text-align: center;
 }
 .credence small { color: var(--muted); display: block; font-size: 0.65rem; }
+.credence.verdict-sabotaged { background: var(--danger-soft); }
+.credence.verdict-honest { background: var(--honest-soft); }
+.credence.verdict-sabotaged small, .credence.verdict-honest small { color: inherit; }
 
 .section { border-bottom: 1px solid var(--line); margin-bottom: 1rem; padding-bottom: 1rem; }
 .section:last-child { border-bottom: 0; }
@@ -192,16 +199,59 @@ pre {
   word-break: break-word;
 }
 
+.section-header { align-items: center; display: flex; gap: 1rem; justify-content: space-between; }
+.section-header h2 { margin-bottom: 0; }
+.small-button { font-size: 0.78rem; padding: 0.3rem 0.6rem; }
+
 .round { margin-top: 0.8rem; }
 .arguments { display: grid; gap: 0.7rem; grid-template-columns: 1fr 1fr; }
-.argument { border: 1px solid var(--line); border-radius: 8px; min-width: 0; overflow: hidden; }
-.argument h4 { background: var(--panel-2); margin: 0; padding: 0.55rem 0.7rem; }
+.argument { align-self: start; border: 1px solid var(--line); border-radius: 8px; min-width: 0; overflow: hidden; }
+.argument h4 { align-items: center; background: var(--panel-2); display: flex; justify-content: space-between; margin: 0; padding: 0.55rem 0.7rem; }
 .argument.clean h4 { color: var(--clean); }
 .argument.sabotaged h4 { color: var(--sabotaged); }
-.argument .body { line-height: 1.55; max-height: 420px; overflow: auto; padding: 0.8rem; white-space: pre-wrap; }
+.argument .collapsible-body { padding: 0.8rem; }
 
 .judge-card { background: var(--panel-2); border-radius: 8px; padding: 0.9rem; }
-.judge-card .body { line-height: 1.55; white-space: pre-wrap; }
+
+/* Collapsible long text */
+.collapsible:not(.expanded):not(.fits) .collapsible-body {
+  max-height: var(--collapsed-height);
+  -webkit-mask-image: linear-gradient(to bottom, #000 75%, transparent);
+  mask-image: linear-gradient(to bottom, #000 75%, transparent);
+  overflow: hidden;
+}
+.collapsible-toggle {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 650;
+  padding: 0.45rem;
+  width: 100%;
+}
+.collapsible-toggle:hover { background: var(--accent-soft); }
+.collapsible.fits .collapsible-toggle { display: none; }
+
+/* Rendered markdown */
+.markdown { line-height: 1.55; overflow-wrap: anywhere; }
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+.markdown p, .markdown ul, .markdown ol, .markdown blockquote, .markdown table { margin: 0 0 0.7rem; }
+.markdown ul, .markdown ol { padding-left: 1.3rem; }
+.markdown li + li { margin-top: 0.2rem; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6 { font-size: 0.95rem; margin: 0.9rem 0 0.4rem; }
+.markdown h1, .markdown h2 { font-size: 1rem; }
+.markdown code { background: var(--panel-2); border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; padding: 0.08rem 0.3rem; }
+.markdown pre { background: var(--panel-2); border-radius: 6px; margin: 0 0 0.7rem; max-height: none; }
+.markdown pre code { background: transparent; padding: 0; }
+.judge-card .markdown code, .judge-card .markdown pre { background: var(--panel); }
+.markdown blockquote { border-left: 3px solid var(--line); color: var(--muted); padding-left: 0.8rem; }
+.markdown table { border-collapse: collapse; display: block; font-size: 0.85rem; overflow-x: auto; }
+.markdown th, .markdown td { border: 1px solid var(--line); padding: 0.3rem 0.5rem; text-align: left; }
+.markdown a { color: var(--accent); }
+.markdown hr { border: 0; border-top: 1px solid var(--line); }
 
 .trace-item { border-top: 1px solid var(--line); padding: 0.65rem 0; }
 .trace-item:first-child { border-top: 0; }
@@ -240,5 +290,7 @@ pre {
     --warning-soft: #443519;
     --clean: #92c8ef;
     --sabotaged: #f1a29a;
+    --honest: #8fd69c;
+    --honest-soft: #1f3a24;
   }
 }

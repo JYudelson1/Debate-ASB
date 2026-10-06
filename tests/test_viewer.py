@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from debate_asb.protocols.simple_debate import _activity_span_name
 from debate_asb.viewer.adapter import adapt_log
+from debate_asb.viewer.markdown import render_markdown
 from debate_asb.viewer.render import render_report
 from debate_asb.viewer.rubrics import RUBRIC_WARNING, load_rubric_context
 
@@ -25,9 +26,21 @@ def test_adapter_groups_partial_results_by_bundle() -> None:
     }
     assert sample.bundles[0].judge_credence == 82
     assert sample.bundles[0].judge_verdict == "sabotaged"
-    assert sample.bundles[1].turns[0].argument == "Transcript-only argument"
+    assert sample.bundles[1].turns[0].argument.source == "Transcript-only argument"
     assert sample.bundles[1].metadata["turns_inferred_from_transcript"] is True
     assert sample.bundles[0].trace[0].role == "sabotaged"
+
+
+def test_markdown_renders_formatting_but_escapes_raw_html() -> None:
+    html = render_markdown(
+        "**bold** `code`\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))"
+    )
+
+    assert "<strong>bold</strong>" in html
+    assert "<code>code</code>" in html
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+    assert 'href="javascript:' not in html
 
 
 def test_rubric_context_retains_warning_and_normalization() -> None:

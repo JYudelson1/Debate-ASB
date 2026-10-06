@@ -7,6 +7,14 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class MarkdownText:
+    """Model-authored text, kept verbatim alongside its rendered HTML."""
+
+    source: str
+    html: str
+
+
+@dataclass(frozen=True)
 class ExcerptView:
     path: str
     start_line: int | None
@@ -18,7 +26,7 @@ class ExcerptView:
 class TurnView:
     round: int
     side: str
-    argument: str
+    argument: MarkdownText
 
 
 @dataclass(frozen=True)
@@ -39,7 +47,7 @@ class BundleView:
     observation: str
     excerpts: tuple[ExcerptView, ...]
     turns: tuple[TurnView, ...] = ()
-    judge_response: str | None = None
+    judge_response: MarkdownText | None = None
     judge_credence: float | None = None
     judge_verdict: str | None = None
     status: str = "extracted"

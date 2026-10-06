@@ -3,39 +3,8 @@
 const report = JSON.parse(document.getElementById("report-data").textContent);
 const state = { sampleIndex: 0, bundleNumber: null, revealRubric: false };
 
-const byId = (id) => document.getElementById(id);
-
-function element(tag, options = {}, children = []) {
-  const node = document.createElement(tag);
-  if (options.className) node.className = options.className;
-  if (options.text !== undefined && options.text !== null) {
-    node.textContent = String(options.text);
-  }
-  for (const [key, value] of Object.entries(options.attributes || {})) {
-    node.setAttribute(key, String(value));
-  }
-  for (const child of Array.isArray(children) ? children : [children]) {
-    if (child) node.appendChild(child);
-  }
-  return node;
-}
-
-function replaceChildren(id, children) {
-  byId(id).replaceChildren(...children.filter(Boolean));
-}
-
-function tag(text, kind = "") {
-  return element("span", { className: `tag ${kind}`.trim(), text });
-}
-
-function pretty(value) {
-  return JSON.stringify(value, null, 2);
-}
-
-function shortText(value, length = 150) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  return text.length > length ? `${text.slice(0, length)}…` : text;
-}
+const ARGUMENT_COLLAPSED_HEIGHT = 300;
+const JUDGE_COLLAPSED_HEIGHT = 380;
 
 function currentSample() {
   return report.samples[state.sampleIndex];
@@ -78,8 +47,7 @@ function render() {
   renderBundle(currentBundle());
   renderRubric(sample);
   renderProvenance(sample);
-  const button = byId("reveal-ground-truth");
-  button.textContent = state.revealRubric
+  byId("reveal-ground-truth").textContent = state.revealRubric
     ? "Hide rubric context"
     : "Reveal rubric context";
 }
@@ -140,21 +108,26 @@ function renderBundleList() {
     !query || `${bundle.number} ${bundle.observation} ${bundle.excerpts.map((x) => x.path).join(" ")}`.toLowerCase().includes(query)
   );
   const buttons = bundles.map((bundle) => {
-    const score = bundle.judge_credence == null ? bundle.status : `${bundle.judge_credence}% · ${bundle.judge_verdict}`;
-    const button = element("button", {
+    const judged = bundle.judge_credence != null;
+    const score = judged ? `${bundle.judge_credence}% · ${bundle.judge_verdict}` : bundle.status;
+    return element("button", {
       className: `bundle-button ${bundle.number === state.bundleNumber ? "selected" : ""}`,
       attributes: { type: "button" },
+      on: {
+        click: () => {
+          state.bundleNumber = bundle.number;
+          renderBundleList();
+          renderBundle(bundle);
+        },
+      },
     }, [
       element("span", { className: "bundle-title", text: `Bundle ${bundle.number}` }),
       element("span", { className: "bundle-observation", text: bundle.observation }),
-      element("span", { className: "bundle-state", text: score }),
+      element("span", {
+        className: `bundle-state ${judged ? verdictClass(bundle.judge_verdict) : ""}`,
+        text: score,
+      }),
     ]);
-    button.addEventListener("click", () => {
-      state.bundleNumber = bundle.number;
-      renderBundleList();
-      renderBundle(bundle);
-    });
-    return button;
   });
   replaceChildren("bundle-list", buttons.length ? buttons : [element("p", { className: "empty", text: "No matching bundles." })]);
 }
@@ -166,7 +139,7 @@ function renderBundle(bundle) {
   }
   const credence = bundle.judge_credence == null
     ? element("div", { className: "credence", text: "—" }, [element("small", { text: "not judged" })])
-    : element("div", { className: "credence" }, [
+    : element("div", { className: `credence ${verdictClass(bundle.judge_verdict)}` }, [
         element("div", { text: `${bundle.judge_credence}%` }),
         element("small", { text: bundle.judge_verdict }),
       ]);
@@ -205,6 +178,7 @@ function debateSection(bundle) {
       element("p", { className: "empty", text: "Debate not completed for this bundle." }),
     ]);
   }
+  const section = element("section", { className: "section" });
   const rounds = [...new Set(bundle.turns.map((turn) => turn.round))].sort((a, b) => a - b);
   const cards = rounds.map((round) => {
     const turns = bundle.turns.filter((turn) => turn.round === round);
@@ -213,17 +187,20 @@ function debateSection(bundle) {
       element("div", { className: "arguments" }, turns.map((turn) =>
         element("div", { className: `argument ${turn.side}` }, [
           element("h4", { text: turn.side.toUpperCase() }),
-          element("div", { className: "body", text: turn.argument }),
+          collapsible(markdownBlock(turn.argument), { collapsedHeight: ARGUMENT_COLLAPSED_HEIGHT }),
         ])
       )),
     ]);
   });
-  return element("section", { className: "section" }, [element("h2", { text: "Debate" }), ...cards]);
+  section.append(sectionHeader("Debate", [expandAllButton(() => section)]), ...cards);
+  return section;
 }
 
 function judgeSection(bundle) {
   const body = bundle.judge_response
-    ? element("div", { className: "judge-card" }, [element("div", { className: "body", text: bundle.judge_response })])
+    ? element("div", { className: "judge-card" }, [
+        collapsible(markdownBlock(bundle.judge_response), { collapsedHeight: JUDGE_COLLAPSED_HEIGHT }),
+      ])
     : element("p", { className: "empty", text: bundle.judge_credence == null ? "Judge not run for this bundle." : "Only the judge credence was retained." });
   return element("section", { className: "section" }, [element("h2", { text: "Judge verdict" }), body]);
 }
