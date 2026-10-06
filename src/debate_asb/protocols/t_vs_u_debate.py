@@ -192,12 +192,21 @@ def t_vs_u_debate(
     trusted_max_cost: float = 1.0,  # nominal USD per turn
     untrusted_max_cost: float = 1.0,  # nominal USD per turn
     judge_max_cost: float = 3.0,
+    trusted_reasoning_effort: str | None = None,  # e.g. "high"; None = provider default
+    untrusted_reasoning_effort: str | None = None,
+    judge_reasoning_effort: str | None = None,
+    debater_max_steps: int = 15,  # rounds of tool calls per debater turn
+    judge_max_steps: int = 40,
     code_execution: bool = False,
     replay: str | None = None,
     reuse: str | list[str] = (),
 ):
-    trusted = ModelSpec(trusted_model, trusted_provider)
-    untrusted = ModelSpec(untrusted_model, untrusted_provider)
+    trusted = ModelSpec(
+        trusted_model, trusted_provider, reasoning_effort=trusted_reasoning_effort
+    )
+    untrusted = ModelSpec(
+        untrusted_model, untrusted_provider, reasoning_effort=untrusted_reasoning_effort
+    )
     u_side = Side(untrusted_side)
     protocol = TvsUDebate(
         sabotaged=Participant(
@@ -206,12 +215,18 @@ def t_vs_u_debate(
         clean=Participant(
             untrusted if u_side == Side.CLEAN else trusted, side=Side.CLEAN
         ),
-        judge=Participant(ModelSpec(judge_model, judge_provider)),
+        judge=Participant(
+            ModelSpec(
+                judge_model, judge_provider, reasoning_effort=judge_reasoning_effort
+            )
+        ),
         n_rounds=n_rounds,
         untrusted_side=u_side,
         trusted_max_cost=trusted_max_cost,
         untrusted_max_cost=untrusted_max_cost,
         judge_max_cost=judge_max_cost,
+        debater_max_steps=debater_max_steps,
+        judge_max_steps=judge_max_steps,
     )
     samples = [with_attacker_instructions(s) for s in load_samples(dataset, sample_ids)]
     return protocol_task(protocol, samples, replay, reuse, code_execution)

@@ -84,12 +84,15 @@ class ModelSpec:
             differ in quantization or price, you must use the full tag.
         temperature: Sampling temperature (None = provider default).
         max_tokens: Max output tokens per call (None = provider default).
+        reasoning_effort: For reasoning models, e.g. "medium", "high" or "max"
+            (None = provider default, which the log then doesn't record).
     """
 
     model: str
     provider: str
     temperature: float | None = None
     max_tokens: int | None = None
+    reasoning_effort: str | None = None
 
     def __post_init__(self) -> None:
         if not self.provider:
@@ -109,6 +112,7 @@ class ModelSpec:
             config=GenerateConfig(
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
+                reasoning_effort=self.reasoning_effort,
                 cache=self.cache_policy(),
                 # Give up on a call after 8 retries, or an attempt after 10 minutes,
                 # rather than hanging on a stuck provider.
