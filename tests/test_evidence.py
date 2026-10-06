@@ -117,6 +117,65 @@ def test_language_specific_excerpt_fence_is_accepted():
     assert bundles[0].excerpts[0].text == "x = 1"
 
 
+@pytest.mark.parametrize("inner_open", ["```", "```bash"])
+def test_same_delimiter_nested_fences_preserve_excerpt(inner_open):
+    excerpt = f"Paper text\n{inner_open}\n# Bundle 99\nx = 1\n```\nMore paper text"
+    first = markdown_bundle(1).replace("x = 1", excerpt)
+    raw = "\n\n".join([first, *(markdown_bundle(n) for n in range(2, 11))])
+
+    bundles = parse_evidence_bundles(raw)
+
+    assert bundles[0].excerpts[0].text == excerpt
+    assert parse_evidence_bundles(render_evidence_bundles(bundles)) == bundles
+
+
+def test_final_nested_markdown_fence_can_implicitly_close_outer_excerpt():
+    excerpt = "README text\n```bash\npython run.py\n```"
+    raw = extractor_output().removesuffix("x = 1\n```") + excerpt
+
+    bundles = parse_evidence_bundles(raw)
+
+    assert bundles[-1].excerpts[0].text == excerpt
+    assert parse_evidence_bundles(render_evidence_bundles(bundles)) == bundles
+
+
+def test_nested_source_fence_preserved_when_outer_missing_before_next_bundle():
+    excerpt = "Paper text\n```\nx = 1\n```"
+    first = markdown_bundle(1).replace("x = 1\n```", excerpt)
+    raw = "\n\n".join([first, *(markdown_bundle(n) for n in range(2, 11))])
+
+    bundles = parse_evidence_bundles(raw)
+
+    assert bundles[0].excerpts[0].text == excerpt
+    assert len(bundles) == 10
+
+
+def test_discontiguous_line_hints_retain_literal_excerpt_and_range_envelope():
+    raw = extractor_output().replace("lines: 1-2", "lines: 1, 4-5", 1)
+
+    bundles = parse_evidence_bundles(raw)
+
+    assert bundles[0].excerpts[0] == EvidenceExcerpt("src/file_1.py", 1, 5, "x = 1")
+    assert ExtractionResult.from_raw(metadata(), raw).raw_output == raw
+
+
+def test_result_recovers_plain_preamble_without_changing_bundles_or_raw_output():
+    raw = "Let me compile the evidence bundles.\n\n" + extractor_output()
+
+    result = ExtractionResult.from_raw(metadata(), raw)
+
+    assert result.bundles == parse_evidence_bundles(extractor_output())
+    assert result.raw_output == raw
+    with pytest.raises(EvidenceParseError, match="expected '# Bundle N'"):
+        parse_evidence_bundles(raw)
+
+
+@pytest.mark.parametrize("prefix", ["# Bundle 2", "path: lost.py", "```markdown"])
+def test_result_never_discards_evidence_or_fences_in_prefix(prefix):
+    with pytest.raises(EvidenceParseError):
+        ExtractionResult.from_raw(metadata(), prefix + "\n" + extractor_output())
+
+
 @pytest.mark.parametrize(
     ("raw", "message"),
     [

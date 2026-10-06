@@ -140,13 +140,13 @@ class ExtractionResult:
             )
         if not self.raw_output:
             raise ValueError("raw extractor output must be retained")
-        if parse_evidence_bundles(self.raw_output) != self.bundles:
+        if parse_extraction_output(self.raw_output) != self.bundles:
             raise ValueError("structured bundles do not match the raw extractor output")
 
     @classmethod
     def from_raw(cls, metadata: StageMetadata, raw_output: str) -> "ExtractionResult":
         """Parse and retain one raw extractor response."""
-        return cls(metadata, parse_evidence_bundles(raw_output), raw_output)
+        return cls(metadata, parse_extraction_output(raw_output), raw_output)
 
 
 @dataclass(frozen=True)
@@ -315,12 +315,37 @@ _LINE_RANGE = re.compile(r"(\d+)(?:-(\d+))?")
 _OPEN_FENCE = re.compile(r"(?P<fence>`{3,})(?:[A-Za-z0-9_+.-]+)?")
 
 
+def parse_extraction_output(text: str) -> tuple[EvidenceBundle, ...]:
+    """Keep raw output intact while accepting plain prose before bundle one.
+
+    The strict parser still validates the complete ten-bundle body. A prefix
+    containing evidence fields, bundle headings or fences is never discarded.
+    """
+    try:
+        return parse_evidence_bundles(text)
+    except EvidenceParseError:
+        lines = text.splitlines(keepends=True)
+        first = next(
+            (i for i, line in enumerate(lines) if line.rstrip("\r\n") == "# Bundle 1"),
+            None,
+        )
+        if first is None or any(
+            line.strip().startswith(
+                ("# Bundle", "## Excerpt", "Observation:", "path:", "lines:", "```")
+            )
+            for line in lines[:first]
+        ):
+            raise
+        return parse_evidence_bundles("".join(lines[first:]))
+
+
 def parse_evidence_bundles(
     text: str, expected_count: int = EXPECTED_BUNDLE_COUNT
 ) -> tuple[EvidenceBundle, ...]:
     """Parse the exact Markdown contract in the extraction prompt.
 
-    Headings inside fenced excerpt text are treated as excerpt content. Errors
+    Headings inside fenced excerpt text are treated as excerpt content. Nested
+    Markdown fences using the outer delimiter are retained verbatim. Errors
     include a one-based response line number so malformed live runs are easy to
     diagnose.
     """
@@ -337,6 +362,24 @@ def parse_evidence_bundles(
 
     def fail(message: str) -> EvidenceParseError:
         return EvidenceParseError(f"line {index + 1}: {message}")
+
+    def boundary_after(line: int) -> bool:
+        following = line + 1
+        while following < len(lines) and not lines[following].strip():
+            following += 1
+        return following == len(lines) or (
+            following + 1 < len(lines)
+            and (
+                (
+                    lines[following] == "## Excerpt"
+                    and lines[following + 1].startswith("path: ")
+                )
+                or (
+                    _BUNDLE_HEADER.fullmatch(lines[following])
+                    and lines[following + 1].startswith("Observation: ")
+                )
+            )
+        )
 
     skip_blank()
     while index < len(lines):
@@ -371,11 +414,23 @@ def parse_evidence_bundles(
             if index >= len(lines) or not lines[index].startswith("lines: "):
                 raise fail("expected 'lines: START-END'")
             line_spec = lines[index].removeprefix("lines: ").strip()
-            line_match = _LINE_RANGE.fullmatch(line_spec)
-            if not line_match:
+            line_matches = [
+                _LINE_RANGE.fullmatch(part.strip()) for part in line_spec.split(",")
+            ]
+            if not line_matches or any(match is None for match in line_matches):
                 raise fail("line range must be N or START-END")
-            start_line = int(line_match.group(1))
-            end_line = int(line_match.group(2) or start_line)
+            ranges = [
+                (int(match.group(1)), int(match.group(2) or match.group(1)))
+                for match in line_matches
+                if match is not None
+            ]
+            if any(start < 1 or end < start for start, end in ranges):
+                raise fail("invalid excerpt line range")
+            # These are citation hints, not a claim that the quote is contiguous.
+            # Keep the raw specification in raw_output and use its envelope;
+            # post-hoc fidelity checks still verify the literal quoted text.
+            start_line = min(start for start, _ in ranges)
+            end_line = max(end for _, end in ranges)
             index += 1
 
             if index >= len(lines) or not (
@@ -385,12 +440,30 @@ def parse_evidence_bundles(
             fence = fence_match.group("fence")
             index += 1
             excerpt_start = index
-            while index < len(lines) and lines[index] != fence:
+            nested_fence: str | None = None
+            implicit_close = False
+            while index < len(lines):
+                if nested_fence is not None:
+                    if lines[index] == nested_fence:
+                        nested_fence = None
+                        if boundary_after(index):
+                            # Keep the source's closing fence when the outer
+                            # delimiter was omitted before the next bundle.
+                            index += 1
+                            implicit_close = True
+                            break
+                elif lines[index] == fence:
+                    if boundary_after(index) or fence not in lines[index + 1 :]:
+                        break
+                    nested_fence = fence
+                elif inner := _OPEN_FENCE.fullmatch(lines[index]):
+                    nested_fence = inner.group("fence")
                 index += 1
-            if index >= len(lines):
+            if index >= len(lines) and not implicit_close:
                 raise fail(f"unclosed {fence} excerpt fence")
             excerpt_text = "\n".join(lines[excerpt_start:index])
-            index += 1
+            if not implicit_close:
+                index += 1
 
             try:
                 excerpts.append(
