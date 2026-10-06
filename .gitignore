@@ -25,3 +25,6 @@ AGENTS.md
 
 # macOS filesystem metadata
 .DS_Store
+
+# Analysis artifacts from E&E runs
+/artifacts/

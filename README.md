@@ -283,7 +283,9 @@ For post-hoc extraction coverage and inspection patterns, use the
 [`extraction-analysis` skill](skills/extraction-analysis/SKILL.md). It collects
 executed extraction traces, saves a semantic sabotage review, and renders a
 standalone HTML report with coverage, file/region hotspots and inspection-to-evidence
-flows. It does not run evaluations or change the protocol.
+flows. Each bundle receives an agent review of bug status, viable sabotage
+candidacy, paper agreement and topic; rendering requires completed bundle reviews.
+It does not run evaluations or change the protocol.
 Run-specific reports, traces, and completed review ledgers remain local under
 `artifacts/extraction-analysis/`; preserve them separately when archiving a run.
 Incomplete extraction traces cannot establish non-exposure; see the skill's
