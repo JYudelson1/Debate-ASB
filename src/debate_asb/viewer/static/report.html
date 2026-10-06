@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Debate ASB eval report</title>
+  <style>/* REPORT_CSS */</style>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Debate ASB</p>
+      <h1 id="report-title">Eval report</h1>
+      <p id="run-summary" class="muted"></p>
+    </div>
+    <div class="controls">
+      <label>Sample <select id="sample-select"></select></label>
+      <button id="reveal-ground-truth" type="button">Reveal rubric context</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="run-tags" class="tag-row"></section>
+    <section id="error-banner"></section>
+    <section id="stage-progress" class="stage-grid"></section>
+
+    <div class="workspace">
+      <aside class="bundle-nav">
+        <div class="bundle-nav-header">
+          <h2>Evidence bundles</h2>
+          <input id="bundle-search" type="search" placeholder="Filter bundles">
+        </div>
+        <div id="bundle-list"></div>
+      </aside>
+
+      <article id="bundle-canvas" class="canvas"></article>
+    </div>
+
+    <section id="rubric-panel" class="hidden"></section>
+    <details class="provenance">
+      <summary>Run and sample provenance</summary>
+      <pre id="provenance-json"></pre>
+    </details>
+  </main>
+
+  <script id="report-data" type="application/json">REPORT_DATA</script>
+  <script>/* REPORT_JS */</script>
+</body>
+</html>
