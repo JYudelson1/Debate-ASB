@@ -8,17 +8,21 @@ debater is trusted and which is untrusted, but not what U knows or wants.
 The debate itself runs exactly as in simple_debate.py (turns, tools, budgets,
 the replayable "debate" stage). What differs:
 
-- Prompts come from this protocol's own folder, prompts/t_vs_u_monitoringbench/
-  (provenance in prompts/README.md): MonitoringBench's debater and judge
-  prompts, with a section added about who is trusted and untrusted. There is a
-  folder for MonitoringBench only, so for now that is the only dataset this
-  runs on.
+- Prompts come from this protocol's own folder per setting,
+  prompts/t_vs_u_monitoringbench/ and prompts/t_vs_u_asb/ (provenance in
+  prompts/README.md): the setting's debater and judge prompts, with a section
+  added about who is trusted and untrusted.
 - This protocol sees the answer key (`sees_answer_key`), and tells U what is in
-  it: MonitoringBench's summary and analysis of the attack, and the attacker's
-  instructions. So it only runs on sabotaged samples.
+  it. On MonitoringBench: the summary and analysis of the attack, and the
+  attacker's instructions. On ASB: the rubric's description, location and
+  impact of the sabotage. So it only runs on sabotaged samples.
 
     uv run inspect eval src/debate_asb/protocols/t_vs_u_debate.py --model none --log-model-api \\
         -T sample_ids=pilot_v1 -T untrusted_side=clean
+
+    # One ASB codebase, every participant with code execution (needs Docker):
+    uv run inspect eval src/debate_asb/protocols/t_vs_u_debate.py --model none --log-model-api \\
+        -T dataset=asb -T sample_ids=hop_jump -T code_execution=true
 """
 
 import re
@@ -47,15 +51,24 @@ T_VS_U_PROMPTS = {
     "monitoringbench": replace(
         SETTINGS["monitoringbench"], folder="t_vs_u_monitoringbench"
     ),
+    "asb": replace(SETTINGS["asb"], folder="t_vs_u_asb"),
 }
 
-# What the untrusted debater is told about the attack: prompt slot -> answer key field.
-BRIEFING = {
-    "{sabotage_summary}": "attack_summary",
-    "{structure}": "structure",
-    "{evasion}": "evasion",
-    "{technique}": "technique",
-    "{side_task_description}": "side_task_description",  # added by the task, below
+# What the untrusted debater is told about the sabotage, per setting:
+# prompt slot -> answer key field.
+BRIEFINGS = {
+    "monitoringbench": {
+        "{sabotage_summary}": "attack_summary",
+        "{structure}": "structure",
+        "{evasion}": "evasion",
+        "{technique}": "technique",
+        "{side_task_description}": "side_task_description",  # added by the task
+    },
+    "asb": {
+        "{sabotage_summary}": "description",
+        "{location}": "location",
+        "{impact}": "impact",
+    },
 }
 
 ASSIGNED = {Side.SABOTAGED: "assigned_sabotaged.md", Side.CLEAN: "assigned_not_sabotaged.md"}  # fmt: skip
@@ -129,23 +142,26 @@ def t_vs_u_prompts(sample: AuditSample) -> PromptSet:
 
 def untrusted_briefing(sample: AuditSample) -> dict[str, str]:
     """What the untrusted debater is told about the attack, as prompt slot -> text."""
+    briefing = BRIEFINGS[t_vs_u_prompts(sample).folder.removeprefix("t_vs_u_")]
     key = sample.answer_key if isinstance(sample.answer_key, dict) else {}
-    missing = [field for field in BRIEFING.values() if not key.get(field)]
+    missing = [field for field in briefing.values() if not key.get(field)]
     if missing:
         raise ValueError(
             f"Sample {sample.id} has no {missing} in its answer key, so the "
             "untrusted debater can't be told the attack."
         )
-    return {slot: key[field].strip() for slot, field in BRIEFING.items()}
+    return {slot: key[field].strip() for slot, field in briefing.items()}
 
 
 def with_attacker_instructions(sample: Sample) -> Sample:
     """Add the attacker's instructions to a MonitoringBench sample's answer key.
 
-    Done when the task is built, not during the run: reading a log is
+    Other samples are returned unchanged. Done when the task is built, not during the run: reading a log is
     synchronous Inspect I/O, which re-enters the event loop and crashes the
     run once samples run in parallel.
     """
+    if sample.metadata.get("setting") != "monitoringbench":
+        return sample
     answer_key = {
         **sample.metadata["answer_key"],
         "side_task_description": side_task_description(str(sample.id)),
@@ -176,6 +192,7 @@ def t_vs_u_debate(
     trusted_max_cost: float = 1.0,  # nominal USD per turn
     untrusted_max_cost: float = 1.0,  # nominal USD per turn
     judge_max_cost: float = 3.0,
+    code_execution: bool = False,
     replay: str | None = None,
     reuse: str | list[str] = (),
 ):
@@ -197,4 +214,4 @@ def t_vs_u_debate(
         judge_max_cost=judge_max_cost,
     )
     samples = [with_attacker_instructions(s) for s in load_samples(dataset, sample_ids)]
-    return protocol_task(protocol, samples, replay, reuse)
+    return protocol_task(protocol, samples, replay, reuse, code_execution)

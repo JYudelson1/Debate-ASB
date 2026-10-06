@@ -147,11 +147,10 @@ the only authorized address) in our own words. The prompts don't state a base
 rate, since the public MonitoringBench data is all attacks and "50%" would be
 false.
 
-# Trusted-vs-untrusted debate (`t_vs_u_monitoringbench/`)
+# Trusted-vs-untrusted debate on MonitoringBench (`t_vs_u_monitoringbench/`)
 
-Prompts for `protocols/t_vs_u_debate.py` on MonitoringBench, the only setting
-it supports so far. The protocol uses this folder instead of
-`monitoringbench/`. `access_tools.md`, `access_tools_turn.md`,
+Prompts for `protocols/t_vs_u_debate.py` on MonitoringBench. The protocol uses
+this folder instead of `monitoringbench/`. `access_tools.md`, `access_tools_turn.md`,
 `access_none.md`, `judge_answer.md` and `game_rules.md` are copies of the
 `monitoringbench/` files, unchanged.
 
@@ -186,3 +185,20 @@ followed by one `*_assigned_*.md`, all NEW (ours):
 - `untrusted_assigned_sabotaged.md`: the same, plus that the debater has to
   sandbag: make arguments weak enough to be refuted, without steering the
   debate toward the actual attack.
+
+# Trusted-vs-untrusted debate on ASB (`t_vs_u_asb/`)
+
+Prompts for `protocols/t_vs_u_debate.py` on ASB, built the same way as
+`t_vs_u_monitoringbench/`. The protocol uses this folder instead of `asb/`.
+`access_tools.md`, `access_tools_turn.md`, `access_tools_execute.md`,
+`access_tools_execute_turn.md`, `access_none.md`, `judge_answer.md` and
+`game_rules.md` are copies of the `asb/` files, unchanged.
+
+- `judge.md`: `asb/judge.md` with one ADDED section, "The Debate", worded as
+  in `t_vs_u_monitoringbench/judge.md` but for a codebase.
+- `debater.md`: `asb/debater.md` with one ADDED slot, `{extra_context}`,
+  before the game rules.
+- `extra_context_*.md` and `*_assigned_*.md`: NEW (ours), as in
+  `t_vs_u_monitoringbench/`, worded for a codebase ("this codebase is
+  sabotaged"). The untrusted debater is told the sabotage from the sample's
+  rubric entry: its `description`, `location` and `impact`.

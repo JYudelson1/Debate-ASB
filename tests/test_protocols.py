@@ -18,7 +18,7 @@ from debate_asb.protocols.full_context_judge import full_context_judge
 from debate_asb.protocols.lone_judge import lone_judge
 from debate_asb.protocols.simple_debate import Debate, debate
 from debate_asb.protocols.t_vs_u_debate import (
-    BRIEFING,
+    BRIEFINGS,
     t_vs_u_debate,
     untrusted_briefing,
 )
@@ -497,7 +497,9 @@ def briefed_sample():
 def t_vs_u_secrets(sample: EvalSample) -> list[str]:
     """Answer-key text that only the untrusted debater may see."""
     key = sample.metadata["answer_key"]
-    return [key[k].strip() for k in BRIEFING.values()] + ["hidden motive"]
+    return [key[k].strip() for k in BRIEFINGS["monitoringbench"].values()] + [
+        "hidden motive"
+    ]
 
 
 @needs_monitoringbench

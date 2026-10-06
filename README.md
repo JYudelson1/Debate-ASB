@@ -64,7 +64,7 @@ Protocols shipped:
 | Debate | `protocols/simple_debate.py` | Two debaters on opposite sides take turns (investigating privately); a judge decides. |
 | Consultancy | `protocols/consultancy.py` | One consultant argues a (by default random) side; a judge questions it, then decides. |
 | Extract-and-evaluate | `protocols/extract_and_evaluate.py` | Extract ten evidence bundles, debate and judge each independently, then take the maximum bundle credence. |
-| Trusted-vs-untrusted debate | `protocols/t_vs_u_debate.py` | Debate where one debater is told the sabotage and secretly works for a "not sabotaged" verdict; the judge knows which debater is untrusted. MonitoringBench only, for now. |
+| Trusted-vs-untrusted debate | `protocols/t_vs_u_debate.py` | Debate where one debater is told the sabotage and secretly works for a "not sabotaged" verdict; the judge knows which debater is untrusted. MonitoringBench and ASB, sabotaged samples only. |
 
 ## How the code is organised
 
