@@ -1,15 +1,23 @@
 from types import SimpleNamespace
 
+import pytest
+
+from debate_asb.protocol import OUT_OF_TOOL_CALLS
 from debate_asb.protocols.simple_debate import _activity_span_name
 from debate_asb.viewer.adapter import adapt_log
 from debate_asb.viewer.markdown import render_markdown
 from debate_asb.viewer.render import render_report
 from debate_asb.viewer.rubrics import RUBRIC_WARNING, load_rubric_context
+from debate_asb.viewer.spans import Activity, parse_activity
 
 
 class Event(SimpleNamespace):
     def model_dump(self, **_: object) -> dict:
         return dict(self.data)
+
+
+def _diagnostics(report, code: str) -> list:
+    return [d for d in report.samples[0].diagnostics if d.code == code]
 
 
 def test_adapter_groups_partial_results_by_bundle() -> None:
@@ -29,6 +37,97 @@ def test_adapter_groups_partial_results_by_bundle() -> None:
     assert sample.bundles[1].turns[0].argument.source == "Transcript-only argument"
     assert sample.bundles[1].metadata["turns_inferred_from_transcript"] is True
     assert sample.bundles[0].trace[0].role == "sabotaged"
+
+
+def test_flattened_tool_history_is_located_at_its_turn() -> None:
+    report = adapt_log(_log_fixture(), "/tmp/example.eval")
+
+    [found] = _diagnostics(report, "flattened_tool_history")
+    assert found.severity == "warning"
+    assert (found.bundle, found.round, found.participant) == (1, 1, "sabotaged")
+
+
+def test_text_only_tool_call_argument_is_an_error() -> None:
+    log = _log_fixture()
+    turn = log.samples[0].store["stages"]["bundle_debates"][0]["turns"][0]
+    turn["argument"] = '[called read_file({"path": "PAPER.md"})]'
+    log.samples[0].store["stages"]["bundle_judgments"][0]["turns"] = [turn]
+
+    report = adapt_log(log, "/tmp/example.eval")
+
+    [found] = _diagnostics(report, "text_only_tool_call")
+    assert found.severity == "error"
+    assert (found.bundle, found.round, found.participant) == (1, 1, "sabotaged")
+    assert found.evidence == '[called read_file({"path": "PAPER.md"})]'
+
+
+def test_argument_quoting_a_tool_call_is_only_a_warning() -> None:
+    log = _log_fixture()
+    turn = {
+        "round": 1,
+        "side": "sabotaged",
+        "argument": "My point.\n[called search({})]",
+    }
+    log.samples[0].store["stages"]["bundle_judgments"][0]["turns"] = [turn]
+
+    report = adapt_log(log, "/tmp/example.eval")
+
+    assert not _diagnostics(report, "text_only_tool_call")
+    assert _diagnostics(report, "partial_text_tool_call")[0].severity == "warning"
+
+
+def test_missing_credence_and_tool_budget_are_flagged() -> None:
+    log = _log_fixture()
+    log.samples[0].store["stages"]["bundle_judgments"][0]["judge_credence"] = None
+    out_of_budget = SimpleNamespace(role="user", text=OUT_OF_TOOL_CALLS)
+    log.samples[0].events.append(
+        Event(event="model", span_id="inner", input=[out_of_budget], data={})
+    )
+
+    report = adapt_log(log, "/tmp/example.eval")
+
+    [missing] = _diagnostics(report, "missing_credence")
+    assert (missing.bundle, missing.participant) == (1, "judge")
+    [budget] = _diagnostics(report, "tool_budget_exhausted")
+    assert (budget.bundle, budget.round, budget.participant) == (1, 1, "sabotaged")
+
+
+def test_sample_error_is_a_sample_level_diagnostic() -> None:
+    log = _log_fixture()
+    log.samples[0].error = {"message": "boom\nmore", "traceback": "Traceback..."}
+
+    report = adapt_log(log, "/tmp/example.eval")
+
+    [found] = _diagnostics(report, "sample_error")
+    assert found.bundle is None
+    assert "boom" in found.detail
+    assert found.evidence == "Traceback..."
+
+
+def test_repeated_diagnostics_at_one_location_merge_into_a_count() -> None:
+    log = _log_fixture()
+    log.samples[0].events.append(log.samples[0].events[-1])
+
+    report = adapt_log(log, "/tmp/example.eval")
+
+    [found] = _diagnostics(report, "flattened_tool_history")
+    assert found.count == 2
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("bundle/3/debate/round/2/clean", Activity("debate", 3, 2, "clean")),
+        ("bundle/3/judgment", Activity("judgment", 3)),
+        ("debate/round/1/sabotaged", Activity("debate", None, 1, "sabotaged")),
+        ("judgment", Activity("judgment")),
+        ("extraction", Activity("extraction")),
+        ("debater_sabotaged", None),
+        ("bundle/3/judgment/extra", None),
+    ],
+)
+def test_parse_activity(name: str, expected: Activity | None) -> None:
+    assert parse_activity(name) == expected
 
 
 def test_markdown_renders_formatting_but_escapes_raw_html() -> None:
@@ -112,6 +211,14 @@ def _log_fixture() -> SimpleNamespace:
             "output": {"completion": "Investigating", "usage": {"input_tokens": 3}},
         },
     )
+    flattened = Event(
+        event="info",
+        span_id="outer",
+        data={
+            "event": "flattened_tool_history_after_invalid_argument",
+            "role": "debater_sabotaged",
+        },
+    )
     extraction = {
         "metadata": {
             "sample_id": "hop_jump",
@@ -190,7 +297,7 @@ def _log_fixture() -> SimpleNamespace:
             "usage": {},
             "replayed_stages": {},
         },
-        events=[outer, inner, model],
+        events=[outer, inner, model, flattened],
         error=None,
         total_time=12.0,
         working_time=10.0,
