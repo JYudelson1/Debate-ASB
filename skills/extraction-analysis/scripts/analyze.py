@@ -579,7 +579,11 @@ def collect(log_paths: list[Path], repo: Path, out: Path, overrides: dict) -> No
         )
     rubric_files = sorted((repo / "data/asb/codebases/_rubrics").glob("*.yaml"))
     code_files = (
-        [Path(__file__), SKILL / "assets/report.html", SKILL / "assets/report-interactions.js"]
+        [
+            Path(__file__),
+            SKILL / "assets/report.html",
+            SKILL / "assets/report-interactions.js",
+        ]
         + sorted((SKILL / "references").glob("*.md"))
         + [SKILL / "SKILL.md"]
     )
@@ -630,7 +634,9 @@ def collect(log_paths: list[Path], repo: Path, out: Path, overrides: dict) -> No
             "locations_used": [],
             "exposure_status": "not_applicable" if honest else "unknown",
             "exposure_tool_refs": [],
-            "exposure_summary": "Honest control." if honest else "Pending agent review.",
+            "exposure_summary": "Honest control."
+            if honest
+            else "Pending agent review.",
         }
     dump(out / "analysis.json", {"manifest": manifest, "samples": samples})
     dump(out / "review.json", review)
@@ -741,20 +747,42 @@ def validate_location_review(sample: dict, review: dict) -> None:
         raise ValueError(f"Resolved review needs locations used: {label}")
     for loc in locations:
         source = loc.get("source")
-        if source not in {"runtime_read", "runtime_search", "annotation_only", "current_file"}:
+        if source not in {
+            "runtime_read",
+            "runtime_search",
+            "annotation_only",
+            "current_file",
+        }:
             raise ValueError(f"Invalid location source: {label}")
-        if loc.get("assessment") not in {"confirmed", "contradicts_annotation", "supporting_clue", "unverified"}:
+        if loc.get("assessment") not in {
+            "confirmed",
+            "contradicts_annotation",
+            "supporting_clue",
+            "unverified",
+        }:
             raise ValueError(f"Invalid location assessment: {label}")
-        if loc.get("annotation_relation") not in {"agrees", "relocated", "contradicts", "additional_context", "unverified"}:
+        if loc.get("annotation_relation") not in {
+            "agrees",
+            "relocated",
+            "contradicts",
+            "additional_context",
+            "unverified",
+        }:
             raise ValueError(f"Invalid annotation relation: {label}")
         if not loc.get("annotation_note", "").strip():
             raise ValueError(f"Missing annotation comparison: {label}")
         if not loc.get("path") or not loc.get("mechanism", "").strip():
             raise ValueError(f"Location needs path and mechanism: {label}")
         start, end = loc.get("start_line"), loc.get("end_line")
-        if (start is None) != (end is None) or (start is not None and (
-            not isinstance(start, int) or not isinstance(end, int) or start < 1 or end < start
-        )):
+        if (start is None) != (end is None) or (
+            start is not None
+            and (
+                not isinstance(start, int)
+                or not isinstance(end, int)
+                or start < 1
+                or end < start
+            )
+        ):
             raise ValueError(f"Invalid reviewed line range: {label}")
         tools = loc.get("tool_refs", [])
         if not set(tools).issubset(steps):
@@ -767,23 +795,34 @@ def validate_location_review(sample: dict, review: dict) -> None:
             for n in tools:
                 step = steps[n]
                 if step["failed"] or step["function"] != expected:
-                    raise ValueError(f"Reviewed location cites wrong or failed tool: {label}")
+                    raise ValueError(
+                        f"Reviewed location cites wrong or failed tool: {label}"
+                    )
                 returned.update(step["exposed"].get(loc["path"], []))
             if not set(range(start, end + 1)).issubset(returned):
                 raise ValueError(f"Reviewed location lines were not returned: {label}")
         elif tools:
-            raise ValueError(f"Non-runtime location cannot claim tool exposure: {label}")
+            raise ValueError(
+                f"Non-runtime location cannot claim tool exposure: {label}"
+            )
         if source == "current_file" and not loc.get("source_sha256"):
             raise ValueError(f"Current-file basis needs source hash: {label}")
     runtime = [loc for loc in locations if loc["source"].startswith("runtime_")]
     if not set(refs).issubset({n for loc in runtime for n in loc["tool_refs"]}):
-        raise ValueError(f"Exposure references need reviewed runtime locations: {label}")
-    required = {"yes": {"confirmed"}, "partial": {"confirmed", "supporting_clue"},
-                "mismatch": {"contradicts_annotation"}}.get(status)
+        raise ValueError(
+            f"Exposure references need reviewed runtime locations: {label}"
+        )
+    required = {
+        "yes": {"confirmed"},
+        "partial": {"confirmed", "supporting_clue"},
+        "mismatch": {"contradicts_annotation"},
+    }.get(status)
     if required and not any(loc["assessment"] in required for loc in runtime):
         raise ValueError(f"Exposure judgment lacks runtime mechanism basis: {label}")
     if review["failure_stage"] == "not_exposed" and status != "no":
-        raise ValueError(f"Non-exposure stage needs an agent non-exposure judgment: {label}")
+        raise ValueError(
+            f"Non-exposure stage needs an agent non-exposure judgment: {label}"
+        )
 
 
 def enrich_review_locations(review: dict, trace: dict, root: str | None) -> list[dict]:
@@ -797,15 +836,27 @@ def enrich_review_locations(review: dict, trace: dict, root: str | None) -> list
             if loc["source"] == "runtime_read" and t.get("path") == loc["path"]:
                 lines = read_lines(t["result"])
             elif loc["source"] == "runtime_search":
-                lines = {h["line"]: h["text"] for h in search_lines(t["result"], root)
-                         if h["path"] == loc["path"]}
+                lines = {
+                    h["line"]: h["text"]
+                    for h in search_lines(t["result"], root)
+                    if h["path"] == loc["path"]
+                }
             else:
                 continue
             for n, text in lines.items():
                 if loc["start_line"] <= n <= loc["end_line"]:
                     found.setdefault(n, text)
-        out.append({**loc, "returned_excerpt": "\n".join(f"{n}: {found[n]}" for n in sorted(found)),
-                    "script_check": "recorded range returned" if found else "no historical source verification"})
+        out.append(
+            {
+                **loc,
+                "returned_excerpt": "\n".join(
+                    f"{n}: {found[n]}" for n in sorted(found)
+                ),
+                "script_check": "recorded range returned"
+                if found
+                else "no historical source verification",
+            }
+        )
     return out
 
 
@@ -839,3 +890,219 @@ def totals(samples: list[dict]) -> dict:
         "sufficiency_eligible": len(sufficient),
         "sample_epochs": len(samples),
     }
+
+
+def md_cell(value: Any) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+
+def short_run(name: str) -> str:
+    match = re.match(r"^(\d{4}-\d{2}-\d{2})T.*_([A-Za-z0-9]+)\.eval$", name)
+    return f"{match[1]} / {match[2][:8]}" if match else name
+
+
+def render(analysis_path: Path, review_path: Path) -> None:
+    analysis = json.loads(analysis_path.read_text())
+    review = json.loads(review_path.read_text())
+    validate_review(analysis, review)
+    samples = []
+    for s in analysis["samples"]:
+        trace = json.loads((analysis_path.parent / s["trace_file"]).read_text())
+        if fingerprint(trace) != s["trace_sha256"]:
+            raise ValueError(f"Trace changed since collection: {s['id']}")
+        decision = review["samples"][s["key"]]
+        samples.append(
+            {
+                **s,
+                "review": decision,
+                "trace": trace,
+                "reviewed_locations": enrich_review_locations(
+                    decision, trace, s["codebase_root"]
+                ),
+                "classification_basis": {
+                    f["path"]: classification_basis(f["path"], analysis["manifest"])
+                    for f in s["metrics"]["files"]
+                },
+            }
+        )
+    summary = totals(samples)
+    run_summaries = [
+        {
+            "run": run["path"],
+            **totals([s for s in samples if s["log_sha256"] == run["sha256"]]),
+        }
+        for run in analysis["manifest"]["runs"]
+    ]
+    payload = {
+        **analysis,
+        "samples": samples,
+        "totals": summary,
+        "per_run": run_summaries,
+        "review_metadata": {k: v for k, v in review.items() if k != "samples"},
+        "review_sha256": sha(review_path),
+        "render_code_hashes": {
+            "scripts/analyze.py": sha(Path(__file__)),
+            "assets/report.html": sha(SKILL / "assets/report.html"),
+            "assets/report-interactions.js": sha(
+                SKILL / "assets/report-interactions.js"
+            ),
+        },
+    }
+    # Escaping '<' prevents artifact text from closing the script element.
+    data = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c")
+    template = (SKILL / "assets/report.html").read_text()
+    report = template.replace(
+        "__INTERACTIONS__", (SKILL / "assets/report-interactions.js").read_text()
+    )
+    report = report.replace("__ANALYSIS_DATA__", data)
+    out = analysis_path.parent
+    (out / "report.html").write_text(report)
+    lines = [
+        "# Extraction analysis",
+        "",
+        f"- Any sabotage evidence: **{summary['captured']}/{summary['eligible']}** reviewed eligible sample epochs.",
+        f"- Complete single bundle: **{summary['single_bundle']}/{summary['sufficiency_eligible']}** resolved sufficiency reviews.",
+        f"- Excluded from coverage rate: **{summary['excluded']}**; statuses: {dict(summary['statuses'])}.",
+        "- Attention proxy: executed extraction tool output, not internal model attention.",
+        "",
+        "| Included? | Sample / epoch | Run | Bundles | Failure stage | Explanation |",
+        "|---|---|---|---|---|---|",
+    ]
+    order = {
+        "no": 0,
+        "partial": 1,
+        "mismatch": 2,
+        "unknown": 3,
+        "yes": 4,
+        "not_applicable": 5,
+    }
+    for s in sorted(
+        samples, key=lambda s: (order[s["review"]["included"]], s["id"], s["epoch"])
+    ):
+        r = s["review"]
+        cells = [
+            r["included"],
+            f"{s['id']} / {s['epoch']}",
+            short_run(s["run"]),
+            ", ".join(map(str, r["matching_bundles"])) or "—",
+            r["failure_stage"],
+            r["summary"],
+        ]
+        lines.append("| " + " | ".join(md_cell(x) for x in cells) + " |")
+    lines.extend(
+        [
+            "",
+            "## How checks are made",
+            "",
+            "- Agent: sabotage inclusion, bundle sufficiency, mechanism exposure and failure explanations; saved in review.json.",
+            "- Script: returned-line coverage, exact excerpt checks, counts and rubric path/line overlaps.",
+            "- Heuristic: filename/path file roles, with recorded explicit overrides. Rubric overlaps are not sabotage verdicts.",
+            "",
+            "## Agent's sabotage basis",
+            "",
+            "| Sample / epoch | Agent exposure judgment | Locations actually used | Source / agent assessment | Tool references |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for s in samples:
+        locs = s["reviewed_locations"]
+        if not locs:
+            lines.append(
+                f"| {md_cell(s['id'])} / {s['epoch']} | {s['review'].get('exposure_status', 'not recorded')} | Not recorded | — | — |"
+            )
+        for loc in locs:
+            where = loc["path"] + (
+                f":{loc['start_line']}-{loc['end_line']}"
+                if loc.get("start_line")
+                else ""
+            )
+            cells = [
+                f"{s['id']} / {s['epoch']}",
+                s["review"].get("exposure_status", "not recorded"),
+                where,
+                f"{loc['source']} / {loc['assessment']}",
+                ", ".join(map(str, loc["tool_refs"])) or "—",
+            ]
+            lines.append("| " + " | ".join(md_cell(x) for x in cells) + " |")
+    lines.extend(
+        [
+            "",
+            "## Inspection",
+            "",
+            "| Sample / epoch | Read lines (unique / presentations) | Repeat reads | Top 3 read share | Exposed → cited files | Readable reasoning |",
+            "|---|---|---|---|---|---|",
+        ]
+    )
+
+    def pct(value: float | None) -> str:
+        return "unknown" if value is None else f"{100 * value:.1f}%"
+
+    for s in samples:
+        m = s["metrics"]
+        known = s["trace_status"] == "observed"
+        cells = [
+            f"{s['id']} / {s['epoch']}",
+            f"{m['unique_read_lines']} / {m['read_presentations']}"
+            if known
+            else "unknown",
+            pct(m["repeat_read_share"]) if known else "unknown",
+            pct(m["top_three_read_share"]) if known else "unknown",
+            f"{m['flow']['exposed_files']} → {m['flow']['exposed_and_cited']}"
+            if known
+            else "unknown",
+            f"{m['reasoning']['readable_blocks']} readable; {m['reasoning']['redacted_blocks']} redacted",
+        ]
+        lines.append("| " + " | ".join(md_cell(x) for x in cells) + " |")
+    lines.extend(
+        [
+            "",
+            "## Measurement limits",
+            "",
+            "- File roles are filename/path heuristics; review important classifications.",
+            "- Target paths and line ranges are rubric hints; capture is a saved semantic review.",
+            "- Partial/missing/replayed traces cannot establish complete historical coverage.",
+            "- Excerpt verification uses runtime read results; search-only matches are weaker.",
+            "- Repeat reads and concentration describe behavior; they do not prove why a miss occurred.",
+            "",
+            "## Reproduction",
+            "",
+            f"- Analysis ID: `{analysis['manifest']['analysis_id']}`",
+            f"- Review SHA-256: `{payload['review_sha256']}`",
+            "- Inputs/config/model/cost/revisions: `analysis.json`; decisions: `review.json`; source responses: `traces/`.",
+        ]
+    )
+    (out / "report.md").write_text("\n".join(lines) + "\n")
+    dump(out / "report.json", payload)
+    print(f"Rendered {out / 'report.html'} and {out / 'report.md'}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    c = sub.add_parser("collect")
+    c.add_argument("--log", action="append", required=True, type=Path)
+    c.add_argument("--repo", type=Path, default=Path.cwd())
+    c.add_argument("--out", type=Path, required=True)
+    c.add_argument("--roles", type=Path)
+    r = sub.add_parser("render")
+    r.add_argument("--analysis", required=True, type=Path)
+    r.add_argument("--review", required=True, type=Path)
+    args = parser.parse_args()
+    try:
+        if args.command == "collect":
+            overrides = yaml.safe_load(args.roles.read_text()) if args.roles else {}
+            if not isinstance(overrides, dict) or any(
+                v not in ROLES for v in overrides.values()
+            ):
+                raise ValueError(
+                    "Role overrides must map path globs to documented roles."
+                )
+            collect(args.log, args.repo.resolve(), args.out.resolve(), overrides)
+        else:
+            render(args.analysis.resolve(), args.review.resolve())
+    except ValueError as exc:
+        parser.error(str(exc))
+
+
+if __name__ == "__main__":
+    main()
