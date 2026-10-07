@@ -752,6 +752,8 @@ def test_t_vs_u_debate_on_a_codebase(script, tmp_path):
         "Research Sabotage Detection: Blue Team Context" in prompt
         for prompt in (trusted, untrusted)
     )
+    # Neither debater gets the judge's credence guidance.
+    assert not any("base rate" in prompt for prompt in (trusted, untrusted))
 
     judge = model_calls(sample, "judge")[0].input[0].text
     assert "Blue Team: Research Sabotage Detection" in judge
