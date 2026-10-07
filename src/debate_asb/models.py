@@ -31,6 +31,7 @@ import urllib.request
 from dataclasses import dataclass
 from enum import Enum
 from functools import cache
+from typing import Literal
 
 from inspect_ai.model import CachePolicy, GenerateConfig, Model, ModelUsage, get_model
 
@@ -40,6 +41,9 @@ OPENROUTER_API = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "google/gemini-3.1-pro-preview"
 DEFAULT_PROVIDER = "google-ai-studio"
 SERVICE_TIER_SUFFIXES = {"flex", "priority", "fast"}
+
+# The reasoning efforts Inspect accepts; which ones a model supports varies.
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 
 @dataclass(frozen=True)
@@ -92,7 +96,7 @@ class ModelSpec:
     provider: str
     temperature: float | None = None
     max_tokens: int | None = None
-    reasoning_effort: str | None = None
+    reasoning_effort: ReasoningEffort | None = None
 
     def __post_init__(self) -> None:
         if not self.provider:

@@ -272,6 +272,34 @@ location hints. These are labeled as potentially stale orientation aids and are
 never used for extraction scoring. Partial and failed runs retain whatever
 stages completed before the error.
 
+A "Transcript health" panel and per-turn callouts flag protocol edge cases
+that affect how far a transcript can be trusted. Examples are tool history
+flattened after a provider rejection, arguments that are only an unexecuted
+`[called …]` tool call, missing judge credences, exhausted tool budgets,
+replayed stages and sample errors. To add a check, write a function in
+`viewer/diagnostics.py` and list it in `CHECKS`.
+
+For post-hoc extraction coverage and inspection patterns, use the
+[`extraction-analysis` skill](skills/extraction-analysis/SKILL.md). It collects
+executed extraction traces, saves a semantic sabotage review, and renders a
+standalone HTML report with coverage, file/region hotspots and inspection-to-evidence
+flows. Each bundle receives an agent review of bug status, viable sabotage
+candidacy, paper agreement and topic; rendering requires completed bundle reviews.
+It does not run evaluations or change the protocol.
+Run-specific reports, traces, and completed review ledgers remain local under
+`artifacts/extraction-analysis/`; preserve them separately when archiving a run.
+Incomplete extraction traces cannot establish non-exposure; see the skill's
+[documented limitation](skills/extraction-analysis/references/metrics.md#incomplete-extraction-traces).
+
+```bash
+uv run python skills/extraction-analysis/scripts/analyze.py collect \
+    --repo . --log logs/<file>.eval --out artifacts/extraction-analysis/<file>
+# Complete the generated review.json using the skill's review criteria.
+uv run python skills/extraction-analysis/scripts/analyze.py render \
+    --analysis artifacts/extraction-analysis/<file>/analysis.json \
+    --review artifacts/extraction-analysis/<file>/review.json
+```
+
 - **There's no published ASB number for our exact setting.** ASB's headline
   0.77 AUROC (Gemini 3.1 Pro) is with full code execution, averaged per sample
   over 5 runs. Their closest reported regime, `no_experiments` (~0.62 Gemini 3.1
@@ -300,3 +328,18 @@ stages completed before the error.
   that always says "sabotaged" catches 100%.
 - A judge that never gives a parseable credence scores NaN. Inspect leaves it
   out of AUROC and reports it as `unscored_samples`; the runner counts it per run.
+
+## Local checks
+
+```bash
+uv sync --locked
+uv run ruff check .
+uv run ruff format --check .
+uv run pyright
+uv run pytest
+```
+
+Pyright uses the same type-checking engine as Pylance. Its configuration checks
+`src/` and `tests/` with the project `.venv`, excluding downloaded datasets and
+generated reports. VS Code selects the same interpreter by default. The Docker
+integration test is skipped when Docker is unavailable.

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+Severity = Literal["error", "warning", "info"]
 
 
 @dataclass(frozen=True)
@@ -12,6 +14,26 @@ class MarkdownText:
 
     source: str
     html: str
+
+
+@dataclass(frozen=True)
+class DiagnosticView:
+    """Something a reader should know before trusting part of a transcript.
+
+    The location fields narrow it down as far as the log allows: no bundle
+    means it concerns the whole sample; a round and participant pin it to one
+    debate turn; participant "judge" pins it to the bundle's judgment.
+    """
+
+    code: str
+    severity: Severity
+    title: str
+    detail: str
+    bundle: int | None = None
+    round: int | None = None
+    participant: str | None = None
+    evidence: str | None = None
+    count: int = 1
 
 
 @dataclass(frozen=True)
@@ -69,6 +91,7 @@ class SampleView:
     rubric: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
     provenance: dict[str, Any] = field(default_factory=dict)
+    diagnostics: tuple[DiagnosticView, ...] = ()
 
 
 @dataclass(frozen=True)

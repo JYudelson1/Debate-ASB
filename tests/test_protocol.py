@@ -1,7 +1,7 @@
 """Focused tests for protocol helpers that do not require the ASB dataset."""
 
 import pytest
-from inspect_ai.model import ChatMessageTool, ChatMessageUser, ModelOutput
+from inspect_ai.model import ChatMessage, ChatMessageTool, ChatMessageUser, ModelOutput
 
 from debate_asb import protocol
 from debate_asb.models import ModelSpec, Participant
@@ -14,7 +14,8 @@ class InvalidArgument(RuntimeError):
 @pytest.mark.asyncio
 async def test_invalid_tool_history_is_flattened_and_retried_once(monkeypatch):
     tool_output = ModelOutput.for_tool_call("mockllm/model", "search", {"pattern": "x"})
-    messages = [
+    assert tool_output.message.tool_calls is not None
+    messages: list[ChatMessage] = [
         ChatMessageUser(content="Find x."),
         tool_output.message,
         ChatMessageTool(content="a.py:1:x", tool_call_id=tool_output.message.tool_calls[0].id, function="search"),
@@ -54,7 +55,7 @@ async def test_invalid_tool_history_is_flattened_and_retried_once(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_other_generation_errors_are_not_retried(monkeypatch):
-    messages = [ChatMessageUser(content="Hello")]
+    messages: list[ChatMessage] = [ChatMessageUser(content="Hello")]
     calls = 0
 
     async def fake_generate(

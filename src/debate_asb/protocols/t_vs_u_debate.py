@@ -39,6 +39,7 @@ from debate_asb.models import (
     DEFAULT_PROVIDER,
     ModelSpec,
     Participant,
+    ReasoningEffort,
     Side,
 )
 from debate_asb.prompts import SETTINGS, Access, PromptSet
@@ -95,6 +96,7 @@ class TvsUDebate(Debate):
         prompts = t_vs_u_prompts(sample)
         untrusted = debater.side == self.untrusted_side
         trust = "untrusted" if untrusted else "trusted"
+        assert debater.side is not None
         opponent = self.clean if debater.side == Side.SABOTAGED else self.sabotaged
 
         values = {"{other_model_type}": opponent.model.model}
@@ -160,6 +162,7 @@ def with_attacker_instructions(sample: Sample) -> Sample:
     synchronous Inspect I/O, which re-enters the event loop and crashes the
     run once samples run in parallel.
     """
+    assert sample.metadata is not None
     if sample.metadata.get("setting") != "monitoringbench":
         return sample
     answer_key = {
@@ -167,7 +170,7 @@ def with_attacker_instructions(sample: Sample) -> Sample:
         "side_task_description": side_task_description(str(sample.id)),
     }
     return sample.model_copy(
-        update={"metadata": {**sample.metadata, "answer_key": answer_key}}
+        update={"metadata": {**(sample.metadata or {}), "answer_key": answer_key}}
     )
 
 
@@ -192,14 +195,15 @@ def t_vs_u_debate(
     trusted_max_cost: float = 1.0,  # nominal USD per turn
     untrusted_max_cost: float = 1.0,  # nominal USD per turn
     judge_max_cost: float = 3.0,
-    trusted_reasoning_effort: str | None = None,  # e.g. "high"; None = provider default
-    untrusted_reasoning_effort: str | None = None,
-    judge_reasoning_effort: str | None = None,
+    trusted_reasoning_effort: ReasoningEffort
+    | None = None,  # e.g. "high"; None = provider default
+    untrusted_reasoning_effort: ReasoningEffort | None = None,
+    judge_reasoning_effort: ReasoningEffort | None = None,
     debater_max_steps: int = 15,  # rounds of tool calls per debater turn
     judge_max_steps: int = 40,
     code_execution: bool = False,
     replay: str | None = None,
-    reuse: str | list[str] = (),
+    reuse: str | list[str] | tuple[str, ...] = (),
 ):
     trusted = ModelSpec(
         trusted_model, trusted_provider, reasoning_effort=trusted_reasoning_effort

@@ -29,6 +29,7 @@ from debate_asb.models import (
     DEFAULT_PROVIDER,
     ModelSpec,
     Participant,
+    ReasoningEffort,
     Side,
 )
 from debate_asb.prompts import Access
@@ -104,6 +105,7 @@ class Debate:
 
         for round in range(1, self.n_rounds + 1):
             for debater, role in debaters:
+                assert debater.side is not None
                 messages = conversations[role]
                 messages.append(
                     ChatMessageUser(
@@ -195,6 +197,7 @@ class Debate:
     def _debater_prompt(
         self, sample: AuditSample, debater: Participant, access: Access
     ) -> str:
+        assert debater.side is not None
         return debater.system_prompt or sample.prompts.debater(
             debater.side,
             self.n_rounds,
@@ -249,11 +252,12 @@ def debate(
     n_rounds: int = 2,
     debater_max_cost: float = 1.0,  # nominal USD per turn
     judge_max_cost: float = 3.0,
-    debater_reasoning_effort: str | None = None,  # e.g. "high"; None = provider default
-    judge_reasoning_effort: str | None = None,
+    debater_reasoning_effort: ReasoningEffort
+    | None = None,  # e.g. "high"; None = provider default
+    judge_reasoning_effort: ReasoningEffort | None = None,
     code_execution: bool = False,
     replay: str | None = None,
-    reuse: str | list[str] = (),
+    reuse: str | list[str] | tuple[str, ...] = (),
 ):
     debater = ModelSpec(
         debater_model, debater_provider, reasoning_effort=debater_reasoning_effort
