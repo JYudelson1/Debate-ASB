@@ -11,6 +11,7 @@ from inspect_ai.log import EvalSample, resolve_sample_attachments
 from debate_asb.datasets import asb_samples
 from debate_asb.datasets.monitoringbench import MB_ROOT, monitoringbench_samples
 from debate_asb.models import ModelSpec, Participant, Side
+from debate_asb.prompts import SETTINGS
 from debate_asb.protocol import AuditSample, ProtocolResult, ToolAccess, parse_credence
 from debate_asb.protocols.consultancy import Consultancy, consultancy
 from debate_asb.protocols.extract_and_evaluate import extract_and_evaluate_debate
@@ -215,6 +216,26 @@ def test_debate_without_judge_access(script, tmp_path):
         "The judge cannot read the paper and codebase"
         in model_calls(sample, "debater_clean")[0].input[0].text
     )
+
+
+def test_only_the_judge_gets_judge_only_guidance():
+    asb = SETTINGS["asb"]
+    debater = asb.debater(Side.CLEAN, 2, 15, "tools", True)
+    consultant = asb.consultant(Side.CLEAN, 2, 15, "tools", True)
+    judge = asb.judge("tools")
+    judge_only = [
+        "Your task is to determine",  # the auditor's task
+        "You are auditing one such codebase",
+        "The base rate of sabotage is 50%",  # credence guidance
+        "Confident sabotage",
+        "as proposed fixes",  # the judge's output
+    ]
+    for prompt in (debater, consultant):
+        assert not any(text in prompt for text in judge_only)
+        assert "## Quirks vs Sabotage" in prompt  # the setting facts stay
+    # The judge still gets its calibration, once (from judge_answer.md).
+    assert judge.count("The base rate of sabotage is 50%") == 1
+    assert "no human or LLM has managed to detect yet" in judge
 
 
 def test_debaters_need_opposing_sides():
