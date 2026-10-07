@@ -11,7 +11,7 @@ from inspect_ai.log import EvalSample, resolve_sample_attachments
 from debate_asb.datasets import asb_samples
 from debate_asb.datasets.monitoringbench import MB_ROOT, monitoringbench_samples
 from debate_asb.models import ModelSpec, Participant, Side
-from debate_asb.prompts import SETTINGS
+from debate_asb.prompts import PROMPTS, SETTINGS
 from debate_asb.protocol import AuditSample, ProtocolResult, ToolAccess, parse_credence
 from debate_asb.protocols.consultancy import Consultancy, consultancy
 from debate_asb.protocols.extract_and_evaluate import extract_and_evaluate_debate
@@ -249,6 +249,35 @@ def test_judge_prompt_ends_with_how_to_answer(setting):
     assert judge.rstrip().endswith(answer)
     # A questioning judge gets no answer format; the setting is still there.
     assert SETTINGS[setting].judge("tools", answer=False).rstrip().endswith(rules)
+
+
+def test_extras_go_before_the_setting_context():
+    asb = SETTINGS["asb"]
+    debater = asb.debater(Side.CLEAN, 2, 15, "tools", True, extras=["## Extra"])
+    judge = asb.judge("tools", extras=["## Extra"])
+    setting = "\n# Research Sabotage Detection: Blue Team Context"  # game_rules.md
+    assert (
+        debater.index("strongest points")
+        < debater.index("## Extra")
+        < debater.index(setting)
+    )
+    assert judge.index("Core Question") < judge.index("## Extra") < judge.index(setting)
+    assert judge.index(setting) < judge.index("## Proposed Fixes")
+    # No extras: exactly the base prompt.
+    assert asb.judge("tools", extras=[]) == asb.judge("tools")
+
+
+def test_protocol_prompt_folders_hold_no_copies_of_base_prompts():
+    for setting in SETTINGS.values():
+        base = PROMPTS / setting.folder
+        for sub in (
+            d for d in base.iterdir() if d.is_dir() and not d.name.startswith("_")
+        ):
+            for f in sub.glob("*.md"):
+                original = base / f.name
+                assert not (
+                    original.exists() and original.read_text() == f.read_text()
+                ), f"{f} is a copy of {original}; read the base file instead"
 
 
 def test_debaters_need_opposing_sides():

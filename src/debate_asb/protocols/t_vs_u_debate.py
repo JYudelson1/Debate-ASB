@@ -8,10 +8,9 @@ debater is trusted and which is untrusted, but not what U knows or wants.
 The debate itself runs exactly as in simple_debate.py (turns, tools, budgets,
 the replayable "debate" stage). What differs:
 
-- Prompts come from this protocol's own folder per setting,
-  prompts/monitoringbench/t_vs_u/ and prompts/asb/t_vs_u/ (provenance in
-  prompts/README.md): the setting's debater and judge prompts, with a section
-  added about who is trusted and untrusted.
+- Prompts are the setting's own debater and judge prompts plus this
+  protocol's extra sections about who is trusted and untrusted, from
+  prompts/<setting>/t_vs_u/ (provenance in prompts/README.md).
 - This protocol sees the answer key (`sees_answer_key`), and tells U what is in
   it. On MonitoringBench: the summary and analysis of the attack, and the
   attacker's instructions. On ASB: the rubric's description, location and
@@ -26,7 +25,8 @@ the replayable "debate" stage). What differs:
 """
 
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
+from pathlib import Path
 from typing import ClassVar, Literal
 
 from inspect_ai import task
@@ -42,18 +42,10 @@ from debate_asb.models import (
     ReasoningEffort,
     Side,
 )
-from debate_asb.prompts import SETTINGS, Access, PromptSet
+from debate_asb.prompts import PROMPTS, Access
 from debate_asb.protocol import AuditSample
 from debate_asb.protocols.simple_debate import Debate
 from debate_asb.task import protocol_task
-
-# This protocol's prompt folder for each setting it can run on.
-T_VS_U_PROMPTS = {
-    "monitoringbench": replace(
-        SETTINGS["monitoringbench"], folder="monitoringbench/t_vs_u"
-    ),
-    "asb": replace(SETTINGS["asb"], folder="asb/t_vs_u"),
-}
 
 # What the untrusted debater is told about the sabotage, per setting:
 # prompt slot -> answer key field.
@@ -92,8 +84,7 @@ class TvsUDebate(Debate):
     def _debater_prompt(
         self, sample: AuditSample, debater: Participant, access: Access
     ) -> str:
-        """simple_debate's debater prompt, plus who the opponent is and the assignment."""
-        prompts = t_vs_u_prompts(sample)
+        """The setting's debater prompt, plus who the opponent is and the assignment."""
         untrusted = debater.side == self.untrusted_side
         trust = "untrusted" if untrusted else "trusted"
         assert debater.side is not None
@@ -102,49 +93,52 @@ class TvsUDebate(Debate):
         values = {"{other_model_type}": opponent.model.model}
         if untrusted:
             values |= untrusted_briefing(sample)
-        extra_context = "\n\n".join(
-            [
-                _fill(prompts._read(f"extra_context_{trust}.md").strip(), values),
-                prompts._read(f"{trust}_{ASSIGNED[debater.side]}").strip(),
-            ]
-        )
-        return debater.system_prompt or _fill(
-            prompts.debater(
-                debater.side,
-                self.n_rounds,
-                self.debater_max_steps,
-                access,
-                self.access.judge,
-            ),
-            {"{extra_context}": extra_context},
+        extras = [
+            _fill(_read(sample, f"extra_context_{trust}.md"), values),
+            _read(sample, f"{trust}_{ASSIGNED[debater.side]}"),
+        ]
+        return debater.system_prompt or sample.prompts.debater(
+            debater.side,
+            self.n_rounds,
+            self.debater_max_steps,
+            access,
+            self.access.judge,
+            extras=extras,
         )
 
     def _judge_prompt(self, sample: AuditSample, access: Access) -> str:
         trusted_side = (
             Side.CLEAN if self.untrusted_side == Side.SABOTAGED else Side.SABOTAGED
         )
-        return _fill(
-            t_vs_u_prompts(sample).judge(access, self.judge_max_steps),
+        debate = _fill(
+            _read(sample, "judge_debate.md"),
             {
                 # As the judge sees the debaters labelled: "debater arguing SABOTAGED".
                 "{trusted_side}": trusted_side.value.upper(),
                 "{untrusted_side}": self.untrusted_side.value.upper(),
             },
         )
+        return sample.prompts.judge(access, self.judge_max_steps, extras=[debate])
 
 
-def t_vs_u_prompts(sample: AuditSample) -> PromptSet:
-    if sample.setting not in T_VS_U_PROMPTS:
+def t_vs_u_folder(sample: AuditSample) -> Path:
+    """This protocol's extra prompts for the sample's setting, e.g. prompts/asb/t_vs_u/."""
+    folder = PROMPTS / sample.prompts.folder / "t_vs_u"
+    if not folder.is_dir():
         raise NotImplementedError(
             f"There are no T-vs-U prompts for the {sample.setting!r} setting yet "
             "(see prompts/README.md)."
         )
-    return T_VS_U_PROMPTS[sample.setting]
+    return folder
+
+
+def _read(sample: AuditSample, name: str) -> str:
+    return (t_vs_u_folder(sample) / name).read_text().strip()
 
 
 def untrusted_briefing(sample: AuditSample) -> dict[str, str]:
     """What the untrusted debater is told about the attack, as prompt slot -> text."""
-    t_vs_u_prompts(sample)  # raises for a setting without T-vs-U prompts
+    t_vs_u_folder(sample)  # raises for a setting without T-vs-U prompts
     briefing = BRIEFINGS[sample.setting]
     key = sample.answer_key if isinstance(sample.answer_key, dict) else {}
     missing = [field for field in briefing.values() if not key.get(field)]
