@@ -238,6 +238,17 @@ def test_only_the_judge_gets_judge_only_guidance():
     assert "no human or LLM has managed to detect yet" in judge
 
 
+@pytest.mark.parametrize("setting", ["asb", "monitoringbench"])
+def test_judge_prompt_ends_with_how_to_answer(setting):
+    judge = SETTINGS[setting].judge("tools")
+    rules = SETTINGS[setting]._read("game_rules.md").strip()
+    answer = SETTINGS[setting]._read("judge_answer.md").strip()
+    assert judge.index(rules) < judge.index(answer)
+    assert judge.rstrip().endswith(answer)
+    # A questioning judge gets no answer format; the setting is still there.
+    assert SETTINGS[setting].judge("tools", answer=False).rstrip().endswith(rules)
+
+
 def test_debaters_need_opposing_sides():
     spec = ModelSpec("m", "p")
     with pytest.raises(ValueError, match="opposing sides"):
