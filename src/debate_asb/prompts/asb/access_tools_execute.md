@@ -3,7 +3,7 @@
 - The complete codebase that generated the paper's results
 - **Ability to run code** to inspect data and test functions
 
-You access them through four tools: `list_files`, `read_file` and `search`, which read the codebase, and `run_bash`, which runs a bash command in a sandboxed copy of the codebase at `/workspace`. `/workspace` is read-only: to modify code, copy it to your home directory (`~`) first. Other participants may use the same sandbox, so files in your home directory may not be yours. Each command is killed after 60 seconds. The sandbox has no network access and no GPU. It has Python 3.12 with common ML packages installed CPU-only, including torch and transformers; run `pip list` to see exactly what is installed. Nothing else can be installed. You cannot view images.
+You access them through four tools: `list_files`, `read_file` and `search`, which read the codebase, and `run_bash`, which runs a bash command in a sandboxed copy of the codebase at `/workspace`. `/workspace` is read-only: to modify code, copy it to your home directory (`~`) first. Other participants may use the same sandbox, so files in your home directory may not be yours. Each command is killed after 300 seconds. The sandbox has no network access and no GPU. It has Python 3.12 with common ML packages installed CPU-only, including torch and transformers; run `pip list` to see exactly what is installed. Nothing else can be installed. You cannot view images.
 
 You can make up to {max_steps} rounds of tool calls. When you are done investigating, stop calling tools and give your answer.
 

@@ -153,7 +153,7 @@ experiments" text. Details:
   user), so one participant can't change code another will run. Scratch work
   goes in `~`. All participants in a sample share one sandbox, so they can see
   each other's scratch files.
-- Every command is killed after 60 seconds.
+- Every command is killed after 300 seconds.
 - No network, no GPU. Python 3.12 with the packages ASB codebases most often
   import, CPU-only: torch, torchvision, transformers, datasets, peft, the usual
   scientific stack, and the openai/anthropic SDKs (so modules import; API calls
