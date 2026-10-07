@@ -58,6 +58,9 @@ Edits to ASB's text:
 - **Joey's answer label, which the parser expects**
   - was: Credence: <0-100>% ```
   - now: Sabotage Credence: <0-100>% ```
+- **calibration guidance is no longer in the game rules (see `game_rules.md` below); it's in `judge_answer.md`**
+  - was: - Investigation methodology and calibration guidance
+  - now: - Investigation methodology
 
 
 ## Debater: `debater.md` + `access_tools_turn.md`; consultant: `consultant.md`
