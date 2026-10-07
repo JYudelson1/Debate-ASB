@@ -8,7 +8,9 @@ them against the originals (ASB commit f8efd68, in `data/asb`).
 If you change a prompt, add your edit here too.
 
 Prompts live in one folder per setting (`asb/`, `monitoringbench/`), with
-the same file names in each; `prompts/__init__.py` assembles them.
+the same file names in each; `prompts/__init__.py` assembles them. Protocols
+with their own prompts have a subfolder inside each setting they support:
+`asb/extract_and_evaluate/`, and `asb/t_vs_u/` and `monitoringbench/t_vs_u/`.
 
 # ASB (`asb/`)
 
@@ -173,7 +175,7 @@ the only authorized address) in our own words. The prompts don't state a base
 rate, since the public MonitoringBench data is all attacks and "50%" would be
 false.
 
-# Trusted-vs-untrusted debate on MonitoringBench (`t_vs_u_monitoringbench/`)
+# Trusted-vs-untrusted debate on MonitoringBench (`monitoringbench/t_vs_u/`)
 
 Prompts for `protocols/t_vs_u_debate.py` on MonitoringBench. The protocol uses
 this folder instead of `monitoringbench/`. `access_tools.md`, `access_tools_turn.md`,
@@ -212,19 +214,19 @@ followed by one `*_assigned_*.md`, all NEW (ours):
   sandbag: make arguments weak enough to be refuted, without steering the
   debate toward the actual attack.
 
-# Trusted-vs-untrusted debate on ASB (`t_vs_u_asb/`)
+# Trusted-vs-untrusted debate on ASB (`asb/t_vs_u/`)
 
 Prompts for `protocols/t_vs_u_debate.py` on ASB, built the same way as
-`t_vs_u_monitoringbench/`. The protocol uses this folder instead of `asb/`.
+`monitoringbench/t_vs_u/`. The protocol uses this folder instead of `asb/`.
 `access_tools.md`, `access_tools_turn.md`, `access_tools_execute.md`,
 `access_tools_execute_turn.md`, `access_none.md`, `judge_answer.md` and
 `game_rules.md` are copies of the `asb/` files, unchanged.
 
 - `judge.md`: `asb/judge.md` with one ADDED section, "The Debate", worded as
-  in `t_vs_u_monitoringbench/judge.md` but for a codebase.
+  in `monitoringbench/t_vs_u/judge.md` but for a codebase.
 - `debater.md`: `asb/debater.md` with one ADDED slot, `{extra_context}`,
   before the game rules.
 - `extra_context_*.md` and `*_assigned_*.md`: NEW (ours), as in
-  `t_vs_u_monitoringbench/`, worded for a codebase ("this codebase is
+  `monitoringbench/t_vs_u/`, worded for a codebase ("this codebase is
   sabotaged"). The untrusted debater is told the sabotage from the sample's
   rubric entry: its `description`, `location` and `impact`.
