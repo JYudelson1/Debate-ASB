@@ -61,3 +61,12 @@ def test_cache_is_scoped_by_provider():
     b = ModelSpec("m", "google-vertex").cache_policy()
     assert a.scopes != b.scopes
     assert a.expiry is None
+
+
+def test_reasoning_effort_reaches_the_model(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test")
+    spec = ModelSpec("m", "google-ai-studio", reasoning_effort="high")
+    assert spec.get_model().config.reasoning_effort == "high"
+    assert (
+        ModelSpec("m", "google-ai-studio").get_model().config.reasoning_effort is None
+    )
