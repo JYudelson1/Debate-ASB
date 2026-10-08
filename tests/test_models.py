@@ -18,6 +18,7 @@ def canned_endpoints(monkeypatch):
     listing = [
         endpoint("google-ai-studio", "Google AI Studio"),
         endpoint("google-ai-studio/flex", "Google AI Studio", prompt="0.000001"),
+        endpoint("google-ai-studio/ultrafast", "Google AI Studio", prompt="0.000012"),
         endpoint("amazon-bedrock", "Amazon Bedrock"),
         endpoint("amazon-bedrock/eu-west-1", "Amazon Bedrock", prompt="0.0000022"),
         endpoint("deepinfra", "DeepInfra", quantization="bf16"),
