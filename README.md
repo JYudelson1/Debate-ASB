@@ -64,7 +64,7 @@ Protocols shipped:
 | Debate | `protocols/simple_debate.py` | Two debaters on opposite sides take turns (investigating privately); a judge decides. |
 | Consultancy | `protocols/consultancy.py` | One consultant argues a (by default random) side; a judge questions it, then decides. |
 | Extract-and-evaluate | `protocols/extract_and_evaluate.py` | Extract ten evidence bundles, debate and judge each independently, then take the maximum bundle credence. |
-| Trusted-vs-untrusted debate | `protocols/t_vs_u_debate.py` | Debate where one debater is told the sabotage and secretly works for a "not sabotaged" verdict; the judge knows which debater is untrusted. MonitoringBench only, for now. |
+| Trusted-vs-untrusted debate | `protocols/t_vs_u_debate.py` | Debate where one debater is told the sabotage and secretly works for a "not sabotaged" verdict; the judge knows which debater is untrusted. MonitoringBench and ASB, sabotaged samples only. |
 
 ## How the code is organised
 
@@ -193,6 +193,11 @@ experiments" text. Details:
   while a single big call gets no discount (full-context judge 1.0). So nominal
   cost makes agentic protocols look ~2.5× pricier *relative to* single-call
   ones than they really are. Budgets (`max_cost`) are nominal. Report both.
+- **Reasoning effort.** `ModelSpec(..., reasoning_effort="high")` sets it for
+  reasoning models (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
+  which ones a model accepts varies). Unset means the provider's default, which
+  the log then doesn't record, so set it explicitly when comparing runs. The
+  debate and T-vs-U tasks take it per role, e.g. `-T judge_reasoning_effort=high`.
 - **Budgets.** Each agentic loop has `max_steps` and `max_cost` (nominal USD);
   when either runs out, the participant must answer.
 
