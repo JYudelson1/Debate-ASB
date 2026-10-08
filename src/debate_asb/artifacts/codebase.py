@@ -91,6 +91,10 @@ class Codebase(Artifact):
             num_lines: How many lines to read (at most 300 per call).
         """
         file = self._resolve(path)
+        if file.is_dir():
+            # Opening a directory raises an OS error whose message Inspect shows the
+            # model, and on Windows it contains the host path (with the variant name).
+            raise ToolError(f"{path} is a directory, not a file")
         if _is_binary(file):
             return f"{path} is a binary file ({file.stat().st_size:,} bytes)."
         all_lines = file.read_text(errors="replace").splitlines()

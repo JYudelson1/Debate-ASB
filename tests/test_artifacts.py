@@ -60,6 +60,13 @@ def test_list_files_reports_a_file_path_to_the_model(hop_jump):
 
 
 @needs_asb
+def test_read_file_reports_a_directory_without_the_host_path(hop_jump):
+    with pytest.raises(ToolError, match="is a directory, not a file") as error:
+        hop_jump.read_file("latent_reasoning")
+    assert str(hop_jump.root) not in str(error.value)
+
+
+@needs_asb
 def test_search_reports_an_invalid_regex_to_the_model(hop_jump):
     with pytest.raises(ToolError, match="Invalid regular expression"):
         hop_jump.search("difference|mean(")  # as a live judge wrote it
