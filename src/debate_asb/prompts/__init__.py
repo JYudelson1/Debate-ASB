@@ -29,7 +29,7 @@ class PromptSet:
     claims: dict[Side, str]  # what each side argues
 
     def judge(self, access: Access, max_steps: int = 40, answer: bool = True) -> str:
-        """The judge's system prompt: task, the access paragraph that's true, how to answer, setting.
+        """The judge's system prompt: task and the access paragraph that's true, setting, how to answer.
 
         answer=False leaves out how to answer (for ASB: proposed fixes,
         calibration, output format), for a judge whose job in a conversation
@@ -37,10 +37,13 @@ class PromptSet:
         format wins and it writes a full report instead.
         """
         access_text = _fill(self._read(f"access_{access}.md"), max_steps=max_steps)
+        # judge.md ends with its own "---" separator.
         prompt = _fill(self._read("judge.md"), access=access_text.strip())
+        prompt += "\n" + self._read("game_rules.md")
         if answer:
-            prompt += "\n" + self._read("judge_answer.md")
-        return prompt + "\n---\n\n" + self._read("game_rules.md")
+            # Last, so the output format and "Begin your audit now." end the prompt.
+            prompt += "\n---\n\n" + self._read("judge_answer.md")
+        return prompt
 
     def debater(
         self,

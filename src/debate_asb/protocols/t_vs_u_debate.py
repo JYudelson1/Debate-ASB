@@ -9,7 +9,7 @@ The debate itself runs exactly as in simple_debate.py (turns, tools, budgets,
 the replayable "debate" stage). What differs:
 
 - Prompts come from this protocol's own folder per setting,
-  prompts/t_vs_u_monitoringbench/ and prompts/t_vs_u_asb/ (provenance in
+  prompts/monitoringbench/t_vs_u/ and prompts/asb/t_vs_u/ (provenance in
   prompts/README.md): the setting's debater and judge prompts, with a section
   added about who is trusted and untrusted.
 - This protocol sees the answer key (`sees_answer_key`), and tells U what is in
@@ -50,9 +50,9 @@ from debate_asb.task import protocol_task
 # This protocol's prompt folder for each setting it can run on.
 T_VS_U_PROMPTS = {
     "monitoringbench": replace(
-        SETTINGS["monitoringbench"], folder="t_vs_u_monitoringbench"
+        SETTINGS["monitoringbench"], folder="monitoringbench/t_vs_u"
     ),
-    "asb": replace(SETTINGS["asb"], folder="t_vs_u_asb"),
+    "asb": replace(SETTINGS["asb"], folder="asb/t_vs_u"),
 }
 
 # What the untrusted debater is told about the sabotage, per setting:
@@ -144,7 +144,8 @@ def t_vs_u_prompts(sample: AuditSample) -> PromptSet:
 
 def untrusted_briefing(sample: AuditSample) -> dict[str, str]:
     """What the untrusted debater is told about the attack, as prompt slot -> text."""
-    briefing = BRIEFINGS[t_vs_u_prompts(sample).folder.removeprefix("t_vs_u_")]
+    t_vs_u_prompts(sample)  # raises for a setting without T-vs-U prompts
+    briefing = BRIEFINGS[sample.setting]
     key = sample.answer_key if isinstance(sample.answer_key, dict) else {}
     missing = [field for field in briefing.values() if not key.get(field)]
     if missing:
