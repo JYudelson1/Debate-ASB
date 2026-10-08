@@ -39,7 +39,7 @@ OPENROUTER_API = "https://openrouter.ai/api/v1"
 # Default for every role. Gemini 3.1 Pro was ASB's best auditor.
 DEFAULT_MODEL = "google/gemini-3.1-pro-preview"
 DEFAULT_PROVIDER = "google-ai-studio"
-SERVICE_TIER_SUFFIXES = {"flex", "priority", "fast"}
+SERVICE_TIER_SUFFIXES = {"flex", "priority", "fast", "ultrafast"}
 
 
 @dataclass(frozen=True)
