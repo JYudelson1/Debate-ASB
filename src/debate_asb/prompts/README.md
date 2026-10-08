@@ -69,6 +69,15 @@ protocol's ToolAccess so they're always true. `game_rules.md` is appended,
 introduced as "the context given to auditors", since its "your task is to
 determine whether..." isn't true of a debater.
 
+- `debater_no_probability.md`: NEW (ours), ASB only. One sentence telling
+  debaters not to state a probability of their own, appended to the paragraph
+  that ends "Respond directly to your opponent's strongest points." only when
+  `state_probability=False` (the debate's `debaters_state_probability` task
+  arg). `debater.md` has an empty `{probability_rule}` slot there, so the
+  default prompt is unchanged. Why: debaters often state their own probability
+  (taking up the auditors' calibration bands in `game_rules.md`), and this lets
+  a run test whether that sways the judge.
+
 Protocol-specific framing that judges see in their user message (the debate
 and consultation intros) is in the protocol modules, and is also ours.
 

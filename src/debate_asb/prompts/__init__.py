@@ -49,10 +49,17 @@ class PromptSet:
         max_steps: int,
         access: Access,
         judge_has_access: bool,
+        state_probability: bool = True,
     ) -> str:
+        """state_probability=False adds debater_no_probability.md (ASB only) to the instructions."""
         other = Side.CLEAN if side == Side.SABOTAGED else Side.SABOTAGED
+        rule = (
+            ""
+            if state_probability
+            else " " + self._read("debater_no_probability.md").strip()
+        )
         return self._participant("debater.md", side, n_rounds, max_steps, access, judge_has_access,
-                                 opponent_claim=self.claims[other])  # fmt: skip
+                                 opponent_claim=self.claims[other], probability_rule=rule)  # fmt: skip
 
     def consultant(
         self,

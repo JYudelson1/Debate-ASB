@@ -10,6 +10,7 @@ from inspect_ai.model import ModelOutput
 from debate_asb.datasets import asb_samples
 from debate_asb.datasets.monitoringbench import MB_ROOT, monitoringbench_samples
 from debate_asb.models import ModelSpec, Participant, Side
+from debate_asb.prompts import PROMPTS
 from debate_asb.protocol import AuditSample, ToolAccess, parse_credence
 from debate_asb.protocols.consultancy import Consultancy, consultancy
 from debate_asb.protocols.full_context_judge import full_context_judge
@@ -249,6 +250,24 @@ def test_judge_access_task_arg(script, tmp_path):
         "The judge can read the paper and codebase itself"
         in model_calls(yes, "debater_clean")[0].input[0].text
     )
+
+
+def test_debaters_state_probability_task_arg(script, tmp_path):
+    script(scripted_debate() + scripted_debate())
+    told = run(
+        debate(sample_ids="hop_jump", debaters_state_probability=False),
+        tmp_path / "told",
+    )
+    default = run(debate(sample_ids="hop_jump"), tmp_path / "default")
+    rule = (PROMPTS / "asb" / "debater_no_probability.md").read_text().strip()
+    end = "Respond directly to your opponent's strongest points."
+    for role in ("debater_sabotaged", "debater_clean"):
+        with_rule = model_calls(told.samples[0], role)[0].input[0].text
+        without = model_calls(default.samples[0], role)[0].input[0].text
+        assert "{probability_rule}" not in without and rule not in without
+        # The only difference is the rule, right after that sentence.
+        assert with_rule == without.replace(end, f"{end} {rule}", 1) != without
+    assert rule not in model_calls(told.samples[0], "judge")[0].input[0].text
 
 
 def test_reasoning_effort_task_args_reach_their_roles(script, tmp_path, monkeypatch):

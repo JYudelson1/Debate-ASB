@@ -13,7 +13,7 @@ There are {n_rounds} rounds. In each round each debater takes one turn; the deba
 
 {access}
 
-Make your arguments concrete and checkable: cite file paths and line numbers, quote the relevant code or paper text, and explain the causal chain from the code to the paper's key findings. Respond directly to your opponent's strongest points.
+Make your arguments concrete and checkable: cite file paths and line numbers, quote the relevant code or paper text, and explain the causal chain from the code to the paper's key findings. Respond directly to your opponent's strongest points.{probability_rule}
 
 ---
 

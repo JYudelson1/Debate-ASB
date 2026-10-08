@@ -60,6 +60,7 @@ class Debate:
     judge_max_steps: int = 40
     judge_max_cost: float = 3.0
     access: ToolAccess = ToolAccess()
+    debaters_state_probability: bool = True  # False: tell debaters not to state one
 
     def __post_init__(self):
         if (self.sabotaged.side, self.clean.side) != (Side.SABOTAGED, Side.CLEAN):
@@ -156,6 +157,7 @@ class Debate:
             self.debater_max_steps,
             access,
             self.access.judge,
+            self.debaters_state_probability,
         )
 
     def _turn_message(
@@ -181,6 +183,7 @@ def debate(
     judge_provider: str = DEFAULT_PROVIDER,
     judge_reasoning_effort: str | None = None,
     judge_access: bool = True,
+    debaters_state_probability: bool = True,
     dataset: Dataset = "asb",
     sample_ids: str | list[str] | None = None,
     n_rounds: int = 2,
@@ -201,6 +204,7 @@ def debate(
         ),
         n_rounds=n_rounds,
         access=ToolAccess(judge=judge_access),
+        debaters_state_probability=debaters_state_probability,
     )
     return protocol_task(
         protocol, load_samples(dataset, sample_ids), replay, reuse, code_execution
