@@ -234,6 +234,23 @@ def test_debate_without_judge_access(script, tmp_path):
     )
 
 
+def test_judge_access_task_arg(script, tmp_path):
+    script(scripted_debate() + scripted_debate())
+    no_access = run(debate(sample_ids="hop_jump", judge_access=False), tmp_path / "no")
+    default = run(debate(sample_ids="hop_jump"), tmp_path / "default")
+    [no], [yes] = no_access.samples, default.samples
+    assert model_calls(no, "judge")[0].tools == []
+    assert "list_files" in {t.name for t in model_calls(yes, "judge")[0].tools}
+    assert (
+        "The judge cannot read the paper and codebase"
+        in model_calls(no, "debater_clean")[0].input[0].text
+    )
+    assert (
+        "The judge can read the paper and codebase itself"
+        in model_calls(yes, "debater_clean")[0].input[0].text
+    )
+
+
 def test_reasoning_effort_task_args_reach_their_roles(script, tmp_path, monkeypatch):
     mock = script(scripted_debate() + explore_then_answer(40))
     efforts = []  # the effort of the ModelSpec behind each call, in call order

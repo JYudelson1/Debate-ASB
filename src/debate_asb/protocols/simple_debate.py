@@ -180,6 +180,7 @@ def debate(
     judge_model: str = DEFAULT_MODEL,
     judge_provider: str = DEFAULT_PROVIDER,
     judge_reasoning_effort: str | None = None,
+    judge_access: bool = True,
     dataset: Dataset = "asb",
     sample_ids: str | list[str] | None = None,
     n_rounds: int = 2,
@@ -199,6 +200,7 @@ def debate(
             )
         ),
         n_rounds=n_rounds,
+        access=ToolAccess(judge=judge_access),
     )
     return protocol_task(
         protocol, load_samples(dataset, sample_ids), replay, reuse, code_execution
