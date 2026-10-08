@@ -128,6 +128,22 @@ def test_generation_the_provider_failed_is_retried(script, tmp_path):
     assert [e["event"] for e in sample.store["transcript"]] == ["generation_error"]
 
 
+def test_generation_that_hit_the_output_limit_is_retried(script, tmp_path):
+    runaway = ModelOutput.from_content(
+        "mockllm/model", '{"name": "read_file"}' * 50, stop_reason="max_tokens"
+    )
+    script(
+        [tool_call("list_files"), runaway, say("Looks fine.\n\nSabotage Credence: 40%")]
+    )
+    log = run(lone_judge(sample_ids="hop_jump"), tmp_path)
+    [sample] = log.samples
+    calls = model_calls(sample, "judge")
+    assert len(calls) == 3 and calls[2].config.cache is False
+    assert sample.store["credence"] == 40
+    [note] = sample.store["transcript"]
+    assert (note["event"], note["stop_reason"]) == ("generation_error", "max_tokens")
+
+
 # --- full-context judge ---
 
 
