@@ -70,6 +70,13 @@ def test_list_files_reports_a_file_path_to_the_model(hop_jump):
 
 
 @needs_asb
+def test_read_file_reports_a_directory_without_the_host_path(hop_jump):
+    with pytest.raises(ToolError, match="is a directory, not a file") as error:
+        hop_jump.read_file("latent_reasoning")
+    assert str(hop_jump.root) not in str(error.value)
+
+
+@needs_asb
 def test_dump_all_includes_code_lists_data_and_refuses_to_truncate(hop_jump):
     dump = hop_jump.dump_all(max_tokens=2_000_000)
     assert (
