@@ -108,8 +108,8 @@ appendix about Modal, which isn't included). Participants never see the
 
 Adapted from the two-stage Extract-and-Evaluate protocol in Arike et al.
 (2026), whose extractor selects supporting excerpts for a separate evaluator.
-The ASB-specific extractor produces exactly ten linked evidence bundles. Each
-contains one neutral factual observation and normally 1--3 verified
+The ASB-specific extractor produces exactly `n_bundles` linked evidence bundles
+(default: 6). Each contains one neutral factual observation and normally 1--3 verified
 paper/code/result excerpts. It is explicitly barred from returning a sabotage
 score or verdict. Output is Markdown (`# Bundle N`, an `Observation:` line, and
 fenced excerpts), not XML.

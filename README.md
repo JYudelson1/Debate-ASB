@@ -63,7 +63,7 @@ Protocols shipped:
 | Full-context judge | `protocols/full_context_judge.py` | Whole codebase in one prompt, no tools, one answer. |
 | Debate | `protocols/simple_debate.py` | Two debaters on opposite sides take turns (investigating privately); a judge decides. |
 | Consultancy | `protocols/consultancy.py` | One consultant argues a (by default random) side; a judge questions it, then decides. |
-| Extract-and-evaluate | `protocols/extract_and_evaluate.py` | Extract ten evidence bundles, debate and judge each independently, then take the maximum bundle credence. |
+| Extract-and-evaluate | `protocols/extract_and_evaluate.py` | Extract `n_bundles` evidence bundles (default: 6), debate and judge each independently, then take the maximum bundle credence. |
 | Trusted-vs-untrusted debate | `protocols/t_vs_u_debate.py` | Debate where one debater is told the sabotage and secretly works for a "not sabotaged" verdict; the judge knows which debater is untrusted. MonitoringBench only, for now. |
 
 ## How the code is organised
