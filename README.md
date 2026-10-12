@@ -271,11 +271,22 @@ uv run python -m debate_asb.viewer logs/<file>.eval
 # writes artifacts/viewer/<file>.html; override with -o path/to/report.html
 ```
 
-The report opens in blind mode. Its explicit rubric reveal includes the ASB
-description, claimed impact and location, acceptable fixes, tags and normalized
-location hints. These are labeled as potentially stale orientation aids and are
-never used for extraction scoring. Partial and failed runs retain whatever
-stages completed before the error.
+The report opens in blind mode. “Reveal sabotage reference” shows the tracked,
+versioned corrections: checked mechanisms, precise locations, source evidence and
+explicit uncertainty. Original rubric and logged claims remain separate. The
+reference never reaches evaluation participants. Partial and failed runs retain
+whatever stages completed before the error.
+
+The [sabotage reference workflow](docs/sabotage-reference.md) explains validation,
+collaborator use, corrections and migration of existing reports. Ten core code
+mechanisms are verified; `awareness_lens` retains unresolved cached-vector
+provenance. Other variants are explicitly pending rather than inheriting a target.
+
+```bash
+uv run python -m debate_asb.sabotage validate
+uv run python -m debate_asb.sabotage_explorer   # artifacts/sabotage-explorer/index.html
+uv run python scripts/refresh_sabotage_reports.py
+```
 
 A "Transcript health" panel and per-turn callouts flag protocol edge cases
 that affect how far a transcript can be trusted. Examples are tool history
@@ -291,6 +302,13 @@ standalone HTML report with coverage, file/region hotspots and inspection-to-evi
 flows. Each bundle receives an agent review of bug status, viable sabotage
 candidacy, paper agreement and topic; rendering requires completed bundle reviews.
 It does not run evaluations or change the protocol.
+The [sabotage explorer](docs/sabotage-reference.md#sabotage-explorer-and-non-target-issues)
+provides readable mechanisms and paired source comparisons. Extraction reports also
+flag the known non-target issues in ASB's `bugs.yaml`, preserving category and
+match strength. Verified quoted signatures, unverified quote matches and location
+hints remain distinct; these flags do not override saved bug judgments or target
+coverage. The bundle table filters these markers alongside bug/paper judgments.
+
 Run-specific reports, traces, and completed review ledgers remain local under
 `artifacts/extraction-analysis/`; preserve them separately when archiving a run.
 Incomplete extraction traces cannot establish non-exposure; see the skill's

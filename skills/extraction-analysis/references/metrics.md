@@ -59,7 +59,9 @@ default single-role summary is an orientation aid, not ground truth.
 - `run_bash` and unfamiliar tool outputs are retained but not assigned to source
   lines automatically. Report the attribution gap; review them explicitly if
   they matter. Input/full-context exposure outside supported tools is also a gap.
-- Normalized sabotage locations are path/line hints from the current rubric.
+- Normalized sabotage locations come from the saved registry snapshot, with
+  primary/supporting/unverified-artifact roles and verification status. Pending
+  records supply no authoritative targets. Original rubric hints remain provenance.
   Distributed and binary/provenance sabotage requires semantic review of the
   mechanism, data relationships or generating code. A file read alone is not proof.
 
@@ -92,3 +94,20 @@ retained responses establish what was seen, but cannot rule out exposure in
 missing events. A failure in a later debate or judgment stage does not by itself
 make an already completed extraction trace incomplete. This is a documented
 limitation of the current implementation, not an automated completeness check.
+
+## Known-issue markers
+
+Catalog matching uses quoted implementation signatures on the paths listed in
+ASB's `bugs.yaml`, restricted to exact listed variants. Strong matches require
+all signature components in source-read-verified excerpts of the same bundle.
+Unverified quotes and location-only overlap remain separate. Range hints use
+trace-verified actual excerpt ranges where available, rather than stale bundle
+line labels. The matcher does not read the observation as proof or infer
+malicious intent, correctness of an annotation, causal impact, or target capture.
+
+Counts are **bundles with at least one marker of each strength**, not distinct
+bugs; strengths can overlap within one bundle. A matched quirk is not a confirmed
+bug. Missing markers do not establish absence, especially for file-only
+annotations, absent production history, omitted context or paraphrased excerpts.
+Saved catalog snapshots, original YAML SHA-256 and matcher hashes make the flags
+reviewable without refetching ASB or calling a model.
