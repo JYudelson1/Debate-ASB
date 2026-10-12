@@ -1,4 +1,4 @@
-"""Load post-hoc ASB rubric context without exposing it to participants."""
+"""Resolve post-hoc sabotage references without exposing them to participants."""
 
 from __future__ import annotations
 
@@ -8,11 +8,13 @@ from typing import Any
 import yaml
 
 from debate_asb.datasets.asb import PROJECT_ROOT, RUBRIC_DIRS
+from debate_asb.sabotage import normalized_locations, resolve_sabotage
 
 RUBRIC_WARNING = (
-    "Rubric context is an orientation aid, not verified ground truth. File paths "
-    "and line numbers may be stale or refer to a different codebase revision. "
-    "Do not treat this panel as extraction scoring."
+    "The versioned sabotage reference supplies checked code mechanisms and explicit "
+    "uncertainty. Original rubric and logged claims are retained separately. Current "
+    "source checks do not prove historical exposure or empirical impact; coverage "
+    "requires reviewing this run's returned evidence."
 )
 
 
@@ -20,31 +22,47 @@ def load_rubric_context(
     sample_id: str,
     target: str | None,
     logged_answer_key: dict[str, Any] | None,
+    workspace: str | None = None,
 ) -> dict[str, Any] | None:
-    """Return the rubric entry and normalized location hints for one sample."""
+    """Prefer the exact registry record; never silently replace it with rubric hints."""
+    reference = resolve_sabotage(sample_id, target, workspace)
+    record = reference["record"]
     found = _find_entry(sample_id)
-    if found is None:
+    if found is None and record is None:
         return None
-
-    label, entry, rubric, rubric_path = found
-    current_sabotage = entry.get("sabotage")
-    sabotage = logged_answer_key or current_sabotage
-    context = {
+    if found:
+        label, entry, rubric, rubric_path = found
+        current_sabotage = entry.get("sabotage")
+        rubric_file = _relative(rubric_path)
+    else:
+        assert record is not None
+        label, entry, rubric = record["label"], record, {}
+        current_sabotage = record["rubric"]["sabotage"]
+        rubric_file = record["rubric"]["path"]
+    context: dict[str, Any] = {
         "warning": RUBRIC_WARNING,
         "label": target or label,
-        "paper_name": rubric.get("paper_name"),
+        "paper_name": rubric.get("paper_name") or entry.get("paper_name"),
         "code_name": entry.get("code_name"),
         "workspace": entry.get("workspace"),
         "red_team_constraints": rubric.get("red_team_constraints"),
-        "sabotage": sabotage,
-        "sabotage_source": (
-            "eval sample metadata" if logged_answer_key else "current rubric"
-        ),
+        "sabotage": None,
+        "sabotage_source": "unverified; see original annotations",
+        "sabotage_reference": reference,
+        "logged_sabotage": logged_answer_key,
+        "current_sabotage": current_sabotage,
         "acceptable_fixes": (entry.get("rubric") or {}).get("acceptable_fixes", []),
         "tags": entry.get("tags") or {},
-        "rubric_file": _relative(rubric_path),
+        "rubric_file": rubric_file,
     }
-    normalized = _normalized_location(sample_id, rubric_path.parent)
+    if reference["usable"] and record and record["mechanism"]:
+        context["sabotage"] = {
+            "description": record["mechanism"],
+            "limitations": record["limitations"],
+            "location": record["locations"],
+        }
+        context["sabotage_source"] = "versioned sabotage registry"
+    normalized = normalized_locations(reference)
     if normalized:
         context["normalized_location"] = normalized
     return context
@@ -65,21 +83,6 @@ def _find_entry(
                     if entry.get("id") == sample_id:
                         return label, entry, rubric, rubric_path
     return None
-
-
-def _normalized_location(sample_id: str, rubric_dir: Path) -> dict[str, Any] | None:
-    path = rubric_dir / "_sabotage_locations.yaml"
-    if not path.exists():
-        return None
-    document = yaml.safe_load(path.read_text()) or {}
-    location = (document.get("samples") or {}).get(sample_id)
-    if not location:
-        return None
-    return {
-        **location,
-        "source_commit": document.get("source_commit"),
-        "source_file": _relative(path),
-    }
 
 
 def _relative(path: Path) -> str:

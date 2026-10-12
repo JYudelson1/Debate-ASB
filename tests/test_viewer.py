@@ -151,9 +151,11 @@ def test_rubric_context_retains_warning_and_normalization() -> None:
 
     assert context is not None
     assert context["warning"] == RUBRIC_WARNING
-    assert context["sabotage"]["impact"]
+    assert context["sabotage_reference"]["record"]["status"] == "verified"
+    assert "790-796" in context["sabotage"]["description"]
+    assert context["current_sabotage"]["impact"]
     assert context["tags"]["localization"] == "distributed"
-    assert context["normalized_location"]["normalization_status"] == "exact"
+    assert context["normalized_location"]["normalization_status"] == "verified"
 
 
 def test_honest_rubric_has_no_sabotage_annotation() -> None:

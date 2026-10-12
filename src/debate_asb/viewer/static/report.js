@@ -77,8 +77,8 @@ function render() {
   renderRubric(sample);
   renderProvenance(sample);
   byId("reveal-ground-truth").textContent = state.revealRubric
-    ? "Hide rubric context"
-    : "Reveal rubric context";
+    ? "Hide sabotage reference"
+    : "Reveal sabotage reference";
 }
 
 function renderRunTags(sample) {
@@ -283,20 +283,27 @@ function renderRubric(sample) {
   }
   const rubric = sample.rubric;
   panel.className = "rubric";
+  const reference = rubric.sabotage_reference || {};
+  const record = reference.record || {};
   const blocks = [
-    rubric.sabotage && rubric.sabotage.description ? rubricBlock("Sabotage description", rubric.sabotage.description) : rubricBlock("Rubric label", rubric.label === "honest" ? "This codebase is labeled honest; no sabotage annotation is provided." : rubric.label),
-    rubric.sabotage && rubric.sabotage.impact ? rubricBlock("Claimed impact", rubric.sabotage.impact) : null,
-    rubric.sabotage && rubric.sabotage.location ? rubricBlock("Claimed location", rubric.sabotage.location) : null,
-    rubric.red_team_constraints ? rubricBlock("Red-team constraints", rubric.red_team_constraints) : null,
-    rubric.acceptable_fixes?.length ? rubricBlock("Acceptable fixes", rubric.acceptable_fixes) : null,
-    Object.keys(rubric.tags || {}).length ? rubricBlock("Rubric tags", rubric.tags) : null,
-    rubric.normalized_location ? rubricBlock("Normalized location hint", rubric.normalized_location) : null,
-    rubricBlock("Provenance", { rubric_file: rubric.rubric_file, sabotage_source: rubric.sabotage_source, workspace: rubric.workspace }),
+    rubricBlock("Saved mechanism", record.mechanism || (record.label === "honest" ? "Honest control; no target sabotage." : "No checked mechanism saved for this variant.")),
+    rubricBlock("Reference status", { status: record.status || "missing", usable: reference.usable, source_check: reference.validation }),
+    record.locations?.length ? rubricBlock("Checked locations and source snapshots", record.locations) : null,
+    record.limitations?.length ? rubricBlock("Limits of verification", record.limitations) : null,
+    rubricBlock("Reference provenance", { registry_version: reference.registry_version, registry_sha256: reference.registry_sha256, entry_version: record.version, entry_sha256: reference.entry_sha256, source_commit: reference.source_commit, workspace: record.workspace }),
   ].filter(Boolean);
+  const evidence = element("details", {}, [
+    element("summary", { text: "Source comparisons and prior review evidence" }),
+    rubricBlock("Evidence", { comparisons: record.comparisons, provenance: record.provenance }),
+  ]);
+  const originals = element("details", {}, [
+    element("summary", { text: "Original rubric and logged claims · may be inaccurate" }),
+    rubricBlock("Original annotations", { rubric_file: rubric.rubric_file, logged: rubric.logged_sabotage, current: rubric.current_sabotage, acceptable_fixes: rubric.acceptable_fixes, tags: rubric.tags, red_team_constraints: rubric.red_team_constraints }),
+  ]);
   panel.replaceChildren(
-    element("h2", { text: "Rubric context · unblinded" }),
+    element("h2", { text: "Sabotage reference · unblinded" }),
     element("div", { className: "warning-card" }, [element("p", { text: rubric.warning })]),
-    element("div", { className: "rubric-grid" }, blocks),
+    element("div", { className: "rubric-grid" }, blocks), evidence, originals,
   );
 }
 
