@@ -314,7 +314,7 @@ def test_debate_cost_caps(script, tmp_path):
 # --- extract-and-evaluate debate ---
 
 
-def extracted_bundles() -> str:
+def extracted_bundles(n_bundles: int = 6) -> str:
     return "\n\n".join(
         f"""# Bundle {number}
 Observation: Candidate mechanism {number}.
@@ -325,14 +325,14 @@ lines: {number}-{number + 1}
 ```text
 x = {number}
 ```"""
-        for number in range(1, 11)
+        for number in range(1, n_bundles + 1)
     )
 
 
-def scripted_extract_and_evaluate(credences=range(51, 61)):
+def scripted_extract_and_evaluate(credences=range(51, 57)):
     debates = [
         response
-        for bundle in range(1, 11)
+        for bundle in range(1, len(credences) + 1)
         for response in (
             say(f"S{bundle}: this mechanism changes the finding."),
             say(f"C{bundle}: this mechanism is benign."),
@@ -342,13 +342,22 @@ def scripted_extract_and_evaluate(credences=range(51, 61)):
         say(f"Bundle assessment.\n\nSabotage Credence: {credence}%")
         for credence in credences
     ]
-    return [say(extracted_bundles()), *debates, *judgments]
+    return [say(extracted_bundles(len(credences))), *debates, *judgments]
 
 
-def test_extract_and_evaluate_debates_and_judges_each_bundle(script, tmp_path):
-    script(scripted_extract_and_evaluate())
+@pytest.mark.parametrize("n_bundles", [None, 1, 3, 10])
+def test_extract_and_evaluate_debates_and_judges_each_bundle(
+    script, tmp_path, n_bundles
+):
+    count = 6 if n_bundles is None else n_bundles
+    credences = list(range(51, 51 + count))
+    script(scripted_extract_and_evaluate(range(51, 51 + count)))
 
-    log = run(extract_and_evaluate_debate(sample_ids="hop_jump", n_rounds=1), tmp_path)
+    kwargs = {} if n_bundles is None else {"n_bundles": n_bundles}
+    log = run(
+        extract_and_evaluate_debate(sample_ids="hop_jump", n_rounds=1, **kwargs),
+        tmp_path,
+    )
     assert log.samples is not None
     [sample] = log.samples
 
@@ -357,26 +366,31 @@ def test_extract_and_evaluate_debates_and_judges_each_bundle(script, tmp_path):
         "bundle_debates",
         "bundle_judgments",
     }
-    assert len(sample.store["stages"]["extraction"]["bundles"]) == 10
-    assert len(sample.store["stages"]["bundle_debates"]) == 10
-    assert len(sample.store["stages"]["bundle_judgments"]) == 10
+    extraction = sample.store["stages"]["extraction"]
+    assert len(extraction["bundles"]) == count
+    assert extraction["metadata"]["config"]["bundle_count"] == count
+    assert sample.store["evaluation"]["metadata"]["config"]["bundle_count"] == count
+    assert len(sample.store["stages"]["bundle_debates"]) == count
+    assert len(sample.store["stages"]["bundle_judgments"]) == count
     assert [
         result["judge_credence"]
         for result in sample.store["evaluation"]["bundle_debates"]
-    ] == list(range(51, 61))
+    ] == credences
     assert sample.store["aggregation"] == {
         "method": "max_bundle_credence",
-        "bundle_credences": list(range(51, 61)),
-        "credence": 60,
-        "winning_bundle_numbers": [10],
+        "bundle_credences": credences,
+        "credence": max(credences),
+        "winning_bundle_numbers": [count],
         "missing_bundle_numbers": [],
     }
-    assert sample.store["credence"] == 60
+    assert sample.store["credence"] == max(credences)
 
-    assert len(model_calls(sample, "extractor")) == 1
-    assert len(model_calls(sample, "debater_sabotaged")) == 10
-    assert len(model_calls(sample, "debater_clean")) == 10
-    assert len(model_calls(sample, "judge")) == 10
+    [extractor_call] = model_calls(sample, "extractor")
+    assert f"Return EXACTLY {count} evidence bundles" in extractor_call.input[0].text
+    assert "{n_bundles}" not in extractor_call.input[0].text
+    assert len(model_calls(sample, "debater_sabotaged")) == count
+    assert len(model_calls(sample, "debater_clean")) == count
+    assert len(model_calls(sample, "judge")) == count
     assert "list_files" in {
         tool.name for tool in model_calls(sample, "extractor")[0].tools
     }
@@ -392,8 +406,38 @@ def test_extract_and_evaluate_debates_and_judges_each_bundle(script, tmp_path):
         entry for entry in sample.store["transcript"] if entry["event"] == "argument"
     ]
     assert [entry["bundle"] for entry in arguments] == [
-        bundle for bundle in range(1, 11) for _ in range(2)
+        bundle for bundle in range(1, count + 1) for _ in range(2)
     ]
+
+
+@pytest.mark.parametrize("max_steps", [1, 60])
+def test_extract_and_evaluate_extractor_step_limit(script, tmp_path, max_steps):
+    script(
+        [tool_call("read_file", path="PAPER.md", num_lines=1) for _ in range(max_steps)]
+        + [say(extracted_bundles())]
+    )
+
+    log = run(
+        extract_and_evaluate_debate(
+            sample_ids="hop_jump",
+            stop_after="extraction",
+            extractor_max_steps=max_steps,
+        ),
+        tmp_path,
+    )
+    assert log.samples is not None
+    [sample] = log.samples
+    calls = model_calls(sample, "extractor")
+    assert len(calls) == max_steps + 1
+    assert sum(bool(call.output.message.tool_calls) for call in calls) == max_steps
+    assert f"up to {max_steps} rounds of tool calls" in calls[0].input[0].text
+    assert (
+        calls[-1].input[-1].text == "You are out of tool calls. Give your answer now."
+    )
+    assert (
+        sample.store["stages"]["extraction"]["metadata"]["config"]["max_steps"]
+        == max_steps
+    )
 
 
 def test_extract_and_evaluate_can_stop_after_extraction(script, tmp_path):
@@ -407,7 +451,7 @@ def test_extract_and_evaluate_can_stop_after_extraction(script, tmp_path):
     [sample] = log.samples
 
     assert set(sample.store["stages"]) == {"extraction"}
-    assert len(sample.store["stages"]["extraction"]["bundles"]) == 10
+    assert len(sample.store["stages"]["extraction"]["bundles"]) == 6
     assert sample.store["credence"] is None
     assert "evaluation" not in sample.store
     assert model_calls(sample, "debater_sabotaged") == []
@@ -435,14 +479,20 @@ def test_extract_and_evaluate_can_stop_after_extraction(script, tmp_path):
     assert not any(isinstance(event, ModelEvent) for event in replayed.events)
 
 
-def test_extract_and_evaluate_replays_extraction_and_debates(script, tmp_path):
-    script(scripted_extract_and_evaluate())
+@pytest.mark.parametrize("n_bundles", [6, 10])
+def test_extract_and_evaluate_replays_extraction_and_debates(
+    script, tmp_path, n_bundles
+):
+    script(scripted_extract_and_evaluate(range(51, 51 + n_bundles)))
     first = run(
-        extract_and_evaluate_debate(sample_ids="hop_jump", n_rounds=1),
+        extract_and_evaluate_debate(
+            sample_ids="hop_jump", n_rounds=1, n_bundles=n_bundles
+        ),
         tmp_path / "first",
     )
 
-    script([say(f"Sabotage Credence: {number}%") for number in range(10, 20)])
+    credences = list(range(10, 10 + n_bundles))
+    script([say(f"Sabotage Credence: {number}%") for number in credences])
     replay = run(
         extract_and_evaluate_debate(
             sample_ids="hop_jump",
@@ -458,14 +508,15 @@ def test_extract_and_evaluate_replays_extraction_and_debates(script, tmp_path):
     assert model_calls(sample, "extractor") == []
     assert model_calls(sample, "debater_sabotaged") == []
     assert model_calls(sample, "debater_clean") == []
-    assert len(model_calls(sample, "judge")) == 10
+    assert len(model_calls(sample, "judge")) == n_bundles
     assert [
         result["judge_credence"]
         for result in sample.store["evaluation"]["bundle_debates"]
-    ] == list(range(10, 20))
-    assert sample.store["aggregation"]["credence"] == 19
-    assert sample.store["aggregation"]["winning_bundle_numbers"] == [10]
-    assert sample.store["credence"] == 19
+    ] == credences
+    assert sample.store["aggregation"]["credence"] == max(credences)
+    assert sample.store["aggregation"]["winning_bundle_numbers"] == [n_bundles]
+    assert sample.store["credence"] == max(credences)
+    assert sample.store["evaluation"]["metadata"]["config"]["bundle_count"] == n_bundles
     assert sample.store["evaluation"]["metadata"]["source_log"] == first.location
 
 

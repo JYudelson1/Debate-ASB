@@ -4,7 +4,21 @@ import pytest
 from inspect_ai.model import ChatMessage, ChatMessageTool, ChatMessageUser, ModelOutput
 
 from debate_asb import protocol
-from debate_asb.models import ModelSpec, Participant
+from debate_asb.models import ModelSpec, Participant, Side
+from debate_asb.protocols.extract_and_evaluate import ExtractAndEvaluateDebate
+
+
+@pytest.mark.parametrize("n_bundles", [0, -1, 1.5, True, "6"])
+def test_extract_and_evaluate_requires_positive_integer_bundle_count(n_bundles):
+    spec = ModelSpec("m", "p")
+    with pytest.raises(ValueError, match="n_bundles must be a positive integer"):
+        ExtractAndEvaluateDebate(
+            extractor=Participant(spec),
+            sabotaged=Participant(spec, side=Side.SABOTAGED),
+            clean=Participant(spec, side=Side.CLEAN),
+            judge=Participant(spec),
+            n_bundles=n_bundles,
+        )
 
 
 class InvalidArgument(RuntimeError):

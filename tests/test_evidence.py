@@ -1,4 +1,5 @@
 import json
+from dataclasses import asdict
 
 import pytest
 
@@ -39,13 +40,11 @@ lines: {number}-{number + 1}
 ```"""
 
 
-def extractor_output() -> str:
-    return "\n\n".join(
-        markdown_bundle(number) for number in range(1, EXPECTED_BUNDLE_COUNT + 1)
-    )
+def extractor_output(bundle_count: int = EXPECTED_BUNDLE_COUNT) -> str:
+    return "\n\n".join(markdown_bundle(number) for number in range(1, bundle_count + 1))
 
 
-def metadata(stage: str = "extraction") -> StageMetadata:
+def metadata(stage: str = "extraction", bundle_count: int = 10) -> StageMetadata:
     return StageMetadata(
         sample_id="hop_jump",
         sample_epoch=1,
@@ -59,7 +58,7 @@ def metadata(stage: str = "extraction") -> StageMetadata:
             )
         },
         prompt_versions={"extract": content_sha256("prompt text")},
-        config={"bundle_count": 10, "nested": {"enabled": True}},
+        config={"bundle_count": bundle_count, "nested": {"enabled": True}},
         costs_usd={"extractor": 0.25},
         source_log="logs/source.eval",
         code_version="abc123",
@@ -238,6 +237,45 @@ def test_result_types_validate_invariants():
             "Duplicate.",
             50,
         )
+
+
+@pytest.mark.parametrize("bundle_count", [1, 6, 12])
+@pytest.mark.parametrize("preamble", ["", "Let me compile the evidence.\n\n"])
+def test_configured_bundle_count_survives_parsing_aggregation_and_round_trip(
+    tmp_path, bundle_count, preamble
+):
+    raw = preamble + extractor_output(bundle_count)
+    extraction = ExtractionResult.from_raw(metadata(bundle_count=bundle_count), raw)
+    assert len(extraction.bundles) == bundle_count
+    assert extraction.raw_output == raw
+    evaluation = EvaluationResult(
+        metadata("evaluation", bundle_count),
+        extraction,
+        tuple(bundle_result(bundle, bundle.number) for bundle in extraction.bundles),
+    )
+    aggregation = aggregate_max_credence(evaluation)
+    assert aggregation.bundle_credences == tuple(range(1, bundle_count + 1))
+    assert aggregation.credence == bundle_count
+    assert aggregation.winning_bundle_numbers == (bundle_count,)
+    for index, result in enumerate((extraction, evaluation, aggregation)):
+        assert load_result(save_result(result, tmp_path / f"{index}.json")) == result
+
+
+def test_extraction_rejects_bundle_count_mismatch():
+    raw = extractor_output()
+    with pytest.raises(EvidenceParseError, match="exactly 6 bundles, got 10"):
+        ExtractionResult.from_raw(metadata(bundle_count=6), raw)
+    data = asdict(extraction_result())
+    data["metadata"]["config"]["bundle_count"] = 6
+    with pytest.raises(ValueError, match="numbered"):
+        extraction_result_from_dict(data)
+
+
+def test_legacy_extraction_without_configured_count_can_be_replayed():
+    data = asdict(extraction_result())
+    del data["metadata"]["config"]["bundle_count"]
+    result = extraction_result_from_dict(data)
+    assert len(result.bundles) == 10
 
 
 def test_evaluation_requires_one_result_per_extracted_bundle():

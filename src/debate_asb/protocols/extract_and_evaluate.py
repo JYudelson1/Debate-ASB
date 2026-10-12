@@ -2,7 +2,8 @@
 
 The protocol has three independently reusable stages:
 
-1. ``extraction``: one model returns ten neutral evidence bundles.
+1. ``extraction``: one model returns ``n_bundles`` neutral evidence bundles
+   (default: six).
 2. ``bundle_debates``: opposing, tool-using debaters evaluate each bundle in
    isolation.
 3. ``bundle_judgments``: a judge gives one retained response and credence per
@@ -98,13 +99,14 @@ class ExtractAndEvaluateDebate:
     judge: Participant
     n_rounds: int = 2
     extractor_max_steps: int = 40
-    extractor_max_cost: float = 4.0
+    extractor_max_cost: float = 3.0
     debater_max_steps: int = 15
     debater_max_cost: float = 1.0
     judge_max_steps: int = 40
     judge_max_cost: float = 3.0
     access: ToolAccess = ToolAccess()
     stop_after: str | None = None
+    n_bundles: int = 6
 
     def __post_init__(self) -> None:
         if (self.sabotaged.side, self.clean.side) != (Side.SABOTAGED, Side.CLEAN):
@@ -113,6 +115,8 @@ class ExtractAndEvaluateDebate:
             )
         if self.n_rounds < 1:
             raise ValueError("n_rounds must be positive")
+        if type(self.n_bundles) is not int or self.n_bundles < 1:
+            raise ValueError("n_bundles must be a positive integer")
         if self.stop_after not in (None, "extraction"):
             raise ValueError("stop_after must be None or 'extraction'")
 
@@ -141,7 +145,7 @@ class ExtractAndEvaluateDebate:
             bundle_debate_result_from_dict(value) for value in judgment_data
         )
         evaluation = EvaluationResult(
-            metadata=self._evaluation_metadata(sample),
+            metadata=self._evaluation_metadata(sample, len(extraction.bundles)),
             extraction=extraction,
             bundle_debates=judgments,
         )
@@ -184,7 +188,10 @@ class ExtractAndEvaluateDebate:
                 {"extractor": _model_metadata(self.extractor.model)},
                 {"extract": content_sha256(prompt)},
                 costs_before,
-                {"bundle_count": 10, "max_steps": self.extractor_max_steps},
+                {
+                    "bundle_count": self.n_bundles,
+                    "max_steps": self.extractor_max_steps,
+                },
             ),
             raw_output,
         )
@@ -341,7 +348,9 @@ class ExtractAndEvaluateDebate:
             raise ValueError("bundle_debates must cover extracted bundles in order")
         return tuple(decoded)
 
-    def _evaluation_metadata(self, sample: AuditSample) -> StageMetadata:
+    def _evaluation_metadata(
+        self, sample: AuditSample, bundle_count: int
+    ) -> StageMetadata:
         prompts = {
             "extract": _prompt("extract_and_evaluate/extract.md"),
             "debater": _prompt("extract_and_evaluate/debater.md"),
@@ -358,7 +367,7 @@ class ExtractAndEvaluateDebate:
             },
             {name: content_sha256(prompt) for name, prompt in prompts.items()},
             {},
-            {"n_rounds": self.n_rounds, "bundle_count": 10},
+            {"n_rounds": self.n_rounds, "bundle_count": bundle_count},
         )
 
     def _metadata(
@@ -410,7 +419,9 @@ class ExtractAndEvaluateDebate:
             _prompt(f"access_{access}.md"), max_steps=self.extractor_max_steps
         )
         return _render(
-            _prompt("extract_and_evaluate/extract.md"), access=access_text.strip()
+            _prompt("extract_and_evaluate/extract.md"),
+            access=access_text.strip(),
+            n_bundles=self.n_bundles,
         )
 
     def _debater_prompt(self, side: Side, access: str) -> str:
@@ -486,6 +497,8 @@ def extract_and_evaluate_debate(
     replay: str | None = None,
     reuse: str | list[str] | tuple[str, ...] = (),
     stop_after: str | None = None,
+    n_bundles: int = 6,
+    extractor_max_steps: int = 40,
 ):
     extractor = Participant(ModelSpec(extractor_model, extractor_provider))
     debater = ModelSpec(debater_model, debater_provider)
@@ -496,6 +509,8 @@ def extract_and_evaluate_debate(
         judge=Participant(ModelSpec(judge_model, judge_provider)),
         n_rounds=n_rounds,
         stop_after=stop_after,
+        n_bundles=n_bundles,
+        extractor_max_steps=extractor_max_steps,
     )
     return protocol_task(
         protocol,

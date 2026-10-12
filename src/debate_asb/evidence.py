@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Literal, cast
 
 SCHEMA_VERSION = 1
+# Fallback for legacy extraction records that do not store a bundle count.
 EXPECTED_BUNDLE_COUNT = 10
 
 type JsonValue = (
@@ -132,21 +133,33 @@ class ExtractionResult:
     raw_output: str
 
     def __post_init__(self) -> None:
+        bundle_count = _extraction_bundle_count(self.metadata)
         numbers = [bundle.number for bundle in self.bundles]
-        expected = list(range(1, EXPECTED_BUNDLE_COUNT + 1))
+        expected = list(range(1, bundle_count + 1))
         if numbers != expected:
             raise ValueError(
                 f"extraction bundles must be numbered {expected}; got {numbers}"
             )
         if not self.raw_output:
             raise ValueError("raw extractor output must be retained")
-        if parse_extraction_output(self.raw_output) != self.bundles:
+        if parse_extraction_output(self.raw_output, bundle_count) != self.bundles:
             raise ValueError("structured bundles do not match the raw extractor output")
 
     @classmethod
     def from_raw(cls, metadata: StageMetadata, raw_output: str) -> "ExtractionResult":
         """Parse and retain one raw extractor response."""
-        return cls(metadata, parse_extraction_output(raw_output), raw_output)
+        return cls(
+            metadata,
+            parse_extraction_output(raw_output, _extraction_bundle_count(metadata)),
+            raw_output,
+        )
+
+
+def _extraction_bundle_count(metadata: StageMetadata) -> int:
+    count = metadata.config.get("bundle_count", EXPECTED_BUNDLE_COUNT)
+    if type(count) is not int or count < 1:
+        raise ValueError("bundle_count must be a positive integer")
+    return count
 
 
 @dataclass(frozen=True)
@@ -243,10 +256,8 @@ class AggregationResult:
     def __post_init__(self) -> None:
         if self.method != "max_bundle_credence":
             raise ValueError(f"unknown aggregation method: {self.method!r}")
-        if len(self.bundle_credences) != EXPECTED_BUNDLE_COUNT:
-            raise ValueError(
-                f"aggregation requires {EXPECTED_BUNDLE_COUNT} bundle credences"
-            )
+        if not self.bundle_credences:
+            raise ValueError("aggregation requires at least one bundle credence")
         for bundle_credence in self.bundle_credences:
             _validate_credence(bundle_credence)
 
@@ -287,7 +298,7 @@ def aggregate_max_credence(evaluation: EvaluationResult) -> AggregationResult:
         for result in evaluation.bundle_debates
     }
     bundle_credences = tuple(
-        by_number[number] for number in range(1, EXPECTED_BUNDLE_COUNT + 1)
+        by_number[bundle.number] for bundle in evaluation.extraction.bundles
     )
     scored = [value for value in bundle_credences if value is not None]
     credence = max(scored) if scored else None
@@ -315,14 +326,16 @@ _LINE_RANGE = re.compile(r"(\d+)(?:-(\d+))?")
 _OPEN_FENCE = re.compile(r"(?P<fence>`{3,})(?:[A-Za-z0-9_+.-]+)?")
 
 
-def parse_extraction_output(text: str) -> tuple[EvidenceBundle, ...]:
+def parse_extraction_output(
+    text: str, expected_count: int = EXPECTED_BUNDLE_COUNT
+) -> tuple[EvidenceBundle, ...]:
     """Keep raw output intact while accepting plain prose before bundle one.
 
-    The strict parser still validates the complete ten-bundle body. A prefix
+    The strict parser still validates the complete evidence-bundle body. A prefix
     containing evidence fields, bundle headings or fences is never discarded.
     """
     try:
-        return parse_evidence_bundles(text)
+        return parse_evidence_bundles(text, expected_count)
     except EvidenceParseError:
         lines = text.splitlines(keepends=True)
         first = next(
@@ -336,7 +349,7 @@ def parse_extraction_output(text: str) -> tuple[EvidenceBundle, ...]:
             for line in lines[:first]
         ):
             raise
-        return parse_evidence_bundles("".join(lines[first:]))
+        return parse_evidence_bundles("".join(lines[first:]), expected_count)
 
 
 def parse_evidence_bundles(
@@ -367,7 +380,7 @@ def parse_evidence_bundles(
         following = line + 1
         while following < len(lines) and not lines[following].strip():
             following += 1
-        return following == len(lines) or (
+        return following == len(lines) or bool(
             following + 1 < len(lines)
             and (
                 (
