@@ -614,7 +614,9 @@ def refresh_reference(analysis_path: Path, review_path: Path) -> None:
     """Migrate saved artifacts without model calls or silently rescoring decisions."""
     analysis = json.loads(analysis_path.read_text())
     review = json.loads(review_path.read_text())
-    validate_review(analysis, review, allow_unreviewed=True)
+    validate_review(
+        analysis, review, allow_unreviewed=True, check_catalog_matches=False
+    )
     reference_manifest = registry_manifest()
     current = {}
     for sample in analysis["samples"]:
@@ -1017,7 +1019,11 @@ def collect(log_paths: list[Path], repo: Path, out: Path, overrides: dict) -> No
 
 
 def validate_review(
-    analysis: dict, review: dict, *, allow_unreviewed: bool = False
+    analysis: dict,
+    review: dict,
+    *,
+    allow_unreviewed: bool = False,
+    check_catalog_matches: bool = True,
 ) -> None:
     measurement_hash = analysis["manifest"].get("samples_sha256")
     if measurement_hash and fingerprint(analysis["samples"]) != measurement_hash:
@@ -1029,7 +1035,7 @@ def validate_review(
     for sample in analysis["samples"]:
         r = review["samples"][sample["key"]]
         catalog = (sample.get("rubric") or {}).get("known_issue_catalog")
-        if analysis["manifest"].get("known_issue_catalog"):
+        if check_catalog_matches and analysis["manifest"].get("known_issue_catalog"):
             if (
                 not catalog
                 or catalog["catalog_sha256"]
@@ -1497,7 +1503,7 @@ def render(analysis_path: Path, review_path: Path) -> None:
             Path(
                 os.path.relpath(
                     Path(analysis["manifest"]["repository"])
-                    / "artifacts/sabotage-explorer/index.html",
+                    / "docs/sabotage-explorer.html",
                     analysis_path.parent,
                 )
             )

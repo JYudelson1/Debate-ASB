@@ -160,16 +160,8 @@ def main() -> int:
         for path in sorted(root.rglob("*.html")):
             if active(path) and refresh_html(path):
                 viewers += 1
-    analyses = [
-        path
-        for root in roots
-        for path in sorted(root.rglob("analysis.json"))
-        if active(path) and path.with_name("report.html").exists()
-    ]
-    explorer_path = REPO / "artifacts/sabotage-explorer/index.html"
-    if explorer_path.exists():
-        backup_file(explorer_path)
-    write_explorer(explorer_path, analyses)
+    explorer_path = REPO / "docs/sabotage-explorer.html"
+    write_explorer(explorer_path)
     print(
         f"Updated {updated} saved analyses and {viewers} viewers/overview pages; explorer: {explorer_path}"
     )

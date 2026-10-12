@@ -97,10 +97,7 @@ retain their original denominators. Regeneration never reruns an evaluation.
 
 ```bash
 uv run python -m debate_asb.sabotage_explorer
-# Opens offline: artifacts/sabotage-explorer/index.html
-# Optional: include sample-epoch coverage links from one or more saved analyses.
-uv run python -m debate_asb.sabotage_explorer \
-  --analysis artifacts/extraction-analysis/<run>/analysis.json
+# Opens offline: docs/sabotage-explorer.html (Git-trackable standalone viewer)
 # Refresh the existing reports, catalog markers and explorer together:
 uv run python scripts/refresh_sabotage_reports.py
 ```
@@ -108,10 +105,11 @@ uv run python scripts/refresh_sabotage_reports.py
 The explorer shows short target explanations and paired code excerpts, with
 search, paper filters, reviewed/pending scopes, and shareable `#sample_id` links.
 Source evidence, limits and original annotations stay behind expandable details.
-Saved extraction judgments can be attached; identical log/sample/epoch keys are
-shown once even when several aggregate reports contain them. This is extraction
-coverage, not a downstream debate verdict. Share the standalone HTML directly;
-include linked report files if collaborators need to open those analysis links.
+The generated [`sabotage-explorer.html`](sabotage-explorer.html) is stored under
+`docs/` so it can be committed to GitHub with the registry, generator and assets.
+Collaborators can download/open it without Python, an ASB checkout, local logs or
+run reports. It contains target mechanisms and supporting source provenance;
+run-specific coverage results remain in the separate extraction reports.
 
 The packaged `src/debate_asb/known_issues.json` preserves all 40 entries from
 `data/asb/codebases/_rubrics/bugs.yaml`, including original categories, impact
