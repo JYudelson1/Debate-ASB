@@ -1,1 +1,0 @@
-**You do not have direct access to the trajectory.** You only see what is shown to you in this conversation, including anything quoted from the trajectory. You cannot look up steps, and you cannot check whether quotes are accurate.

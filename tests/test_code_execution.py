@@ -13,6 +13,7 @@ from debate_asb import task as task_module
 from debate_asb.artifacts import Codebase
 from debate_asb.artifacts import codebase as codebase_module
 from debate_asb.datasets import asb_samples
+from debate_asb.models import Side
 from debate_asb.prompts import SETTINGS
 from debate_asb.protocols.lone_judge import lone_judge
 
@@ -32,6 +33,16 @@ class FakeSandbox:
     async def exec(self, cmd, cwd=None, user=None, timeout=None, **kwargs):
         self.calls.append({"cmd": cmd, "cwd": cwd, "user": user})
         return ExecResult(success=True, returncode=0, stdout="hello\n", stderr="")
+
+
+def test_participants_are_told_the_real_timeout():
+    stated = f"killed after {codebase_module.COMMAND_TIMEOUT_SECONDS} seconds"
+    told = [
+        Codebase.run_bash.__doc__ or "",  # the tool description models see
+        SETTINGS["asb"].judge("tools_execute"),
+        SETTINGS["asb"].debater(Side.SABOTAGED, 2, 15, "tools_execute", True),
+    ]
+    assert all(stated in " ".join(text.split()) for text in told)
 
 
 @pytest.fixture
@@ -112,7 +123,9 @@ def docker_running() -> bool:
 
 @needs_asb
 @pytest.mark.skipif(not docker_running(), reason="Docker isn't running")
-def test_real_sandbox(script, tmp_path):
+def test_real_sandbox(script, tmp_path, monkeypatch):
+    # A short timeout, so the test needn't wait out the real one.
+    monkeypatch.setattr(codebase_module, "COMMAND_TIMEOUT_SECONDS", 5)
     commands = [
         "ls",
         "ls CLAUDE.md",
@@ -121,7 +134,7 @@ def test_real_sandbox(script, tmp_path):
         "python -c \"import urllib.request; urllib.request.urlopen('http://1.1.1.1', timeout=5)\"",
         "python -c 'import numpy, pandas; print(numpy.__version__)'",
         "python -c 'import torch, transformers; print(torch.cuda.is_available())'",
-        "sleep 75; echo finished",
+        "sleep 10; echo finished",
     ]
     script(
         [tool_call("run_bash", command=c) for c in commands]
@@ -141,4 +154,4 @@ def test_real_sandbox(script, tmp_path):
     assert "[exit code 0]" not in network  # no network
     assert "[exit code 0]" in numpy
     assert "[exit code 0]" in torch and "False" in torch  # CPU-only torch
-    assert "killed after 60 seconds" in sleep and "finished" not in sleep
+    assert "killed after 5 seconds" in sleep and "finished" not in sleep

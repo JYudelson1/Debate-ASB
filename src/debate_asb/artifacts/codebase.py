@@ -180,7 +180,7 @@ class Codebase(Artifact):
 
         The command runs in /workspace, which holds the codebase and is read-only.
         To modify code, copy it to your home directory (~) first. Each command is
-        killed after 60 seconds. There is no network access and no GPU.
+        killed after 300 seconds. There is no network access and no GPU.
 
         Args:
             command: The bash command to run.
