@@ -271,11 +271,7 @@ def index_page(root: Path) -> str:
     for path in sorted(root.rglob("*.eval")):
         groups.setdefault(path.parent, []).append(path)
     sections = "".join(
-        f"""<details class="group"{" open" if directory.name == "logs" else ""}>
-  <summary>{esc(directory.relative_to(root).as_posix() or ".")} <span class="meta">{len(paths)} logs</span></summary>
-  <table><tr><th>log</th><th>task</th><th>samples</th><th>commit</th><th>task args</th></tr>
-  {"".join(log_row(root, p) for p in paths)}</table></details>"""
-        for directory, paths in sorted(groups.items())
+        log_group(root, directory, paths) for directory, paths in sorted(groups.items())
     )
     return page(
         "Transcripts",
@@ -283,14 +279,32 @@ def index_page(root: Path) -> str:
     )
 
 
-def log_row(root: Path, path: Path) -> str:
+def log_group(root: Path, directory: Path, paths: list[Path]) -> str:
+    """One folder's logs. Rows show only the task args that differ within the folder."""
+    logs: dict[Path, EvalLog | Exception] = {}
+    for path in paths:
+        try:
+            logs[path] = read_eval_log(path, header_only=True)
+        except Exception as e:
+            logs[path] = e
+    args = [log.eval.task_args for log in logs.values() if isinstance(log, EvalLog)]
+    varying = {
+        k for a in args for k in a if len({str(b[k]) for b in args if k in b}) > 1
+    }
+    rows = "".join(log_row(root, p, log, varying) for p, log in logs.items())
+    return f"""<details class="group"{" open" if directory.name == "logs" else ""}>
+  <summary>{esc(directory.relative_to(root).as_posix() or ".")} <span class="meta">{len(paths)} logs</span></summary>
+  <table><tr><th>log</th><th>task</th><th>samples</th><th>commit</th>
+  <th>{"task args that differ here (hover for all)" if varying else "task args"}</th></tr>
+  {rows}</table></details>"""
+
+
+def log_row(root: Path, path: Path, log: EvalLog | Exception, shown: set[str]) -> str:
     name = f'<a href="{link("/log", path=path.relative_to(root).as_posix())}">{esc(path.stem[:19])}</a>'
-    try:
-        log = read_eval_log(path, header_only=True)
-    except Exception as e:
-        return f'<tr><td>{name}</td><td colspan="4" class="error">{esc(e)}</td></tr>'
+    if isinstance(log, Exception):
+        return f'<tr><td>{name}</td><td colspan="4" class="error">{esc(log)}</td></tr>'
     return f"""<tr><td>{name}</td><td>{esc(log.eval.task)}</td><td>{esc(log_size(log))}</td>
-  <td>{esc(commit(log))}</td><td class="meta">{esc(task_args(log))}</td></tr>"""
+  <td>{esc(commit(log))}</td><td class="meta" title="{esc(task_args(log))}">{esc(task_args(log, shown or None))}</td></tr>"""
 
 
 def log_size(log: EvalLog) -> str:
@@ -308,9 +322,11 @@ def commit(log: EvalLog) -> str:
     )
 
 
-def task_args(log: EvalLog) -> str:
+def task_args(log: EvalLog, keys: set[str] | None = None) -> str:
     return ", ".join(
-        f"{k}={v}" for k, v in log.eval.task_args.items() if v not in (None, "", [])
+        f"{k}={v}"
+        for k, v in log.eval.task_args.items()
+        if v not in (None, "", []) and (keys is None or k in keys)
     )
 
 
