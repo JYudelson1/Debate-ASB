@@ -28,12 +28,6 @@ def test_explorer_is_portable_and_preserves_uncertainty(tmp_path):
     assert "https://" not in html.split('<script id="explorer-data"')[0]
     assert "EXPLORER_DATA" not in html and "/* EXPLORER_JS */" not in html
     match = re.search(
-        r'<script id="explorer-data" type="application/json">(.*?)</script>',
-        html,
-        re.S,
-    )
-    assert match is not None
-    match = re.search(
         r'<script id="explorer-data" type="application/json">(.*?)</script>', html, re.S
     )
     assert match is not None
@@ -46,3 +40,7 @@ def test_explorer_is_portable_and_preserves_uncertainty(tmp_path):
         e["id"] for e in samples["awareness_lens"]["known_issues"]
     }
     assert 'aria-label="Codebases"' in html
+    assert "Did the saved analyses retain it?" not in html
+    assert "Open analysis" not in html
+    assert all("analyses" not in sample for sample in data["samples"])
+    assert "/Users/" not in html

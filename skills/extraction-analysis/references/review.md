@@ -153,6 +153,6 @@ can themselves be disputed (for example, training atomic facts versus leaking a
 held-out target); retain the bundle's independent saved assessment and explanation.
 
 The standalone sabotage explorer offers readable mechanisms, paired code,
-qualifications, known non-target issues, and optional links to saved extraction
-coverage. Generate it with `python -m debate_asb.sabotage_explorer`; the normal
+qualifications and known non-target issues. Its standalone output lives in
+`docs/sabotage-explorer.html` for sharing through GitHub. Generate it with `python -m debate_asb.sabotage_explorer`; the normal
 report refresh command generates it alongside migrated reports.

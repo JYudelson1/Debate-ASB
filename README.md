@@ -284,7 +284,7 @@ provenance. Other variants are explicitly pending rather than inheriting a targe
 
 ```bash
 uv run python -m debate_asb.sabotage validate
-uv run python -m debate_asb.sabotage_explorer   # artifacts/sabotage-explorer/index.html
+uv run python -m debate_asb.sabotage_explorer   # docs/sabotage-explorer.html
 uv run python scripts/refresh_sabotage_reports.py
 ```
 
@@ -303,7 +303,9 @@ flows. Each bundle receives an agent review of bug status, viable sabotage
 candidacy, paper agreement and topic; rendering requires completed bundle reviews.
 It does not run evaluations or change the protocol.
 The [sabotage explorer](docs/sabotage-reference.md#sabotage-explorer-and-non-target-issues)
-provides readable mechanisms and paired source comparisons. Extraction reports also
+provides readable mechanisms and paired source comparisons. The standalone
+[`docs/sabotage-explorer.html`](docs/sabotage-explorer.html) can be committed and
+opened directly by collaborators without local logs. Extraction reports also
 flag the known non-target issues in ASB's `bugs.yaml`, preserving category and
 match strength. Verified quoted signatures, unverified quote matches and location
 hints remain distinct; these flags do not override saved bug judgments or target
