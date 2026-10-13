@@ -61,13 +61,25 @@ class Turn:
 
     @property
     def final(self) -> ModelEvent | None:
-        """The call whose reply ended the turn (None if it never ended)."""
-        return self.calls[-1] if ends_turn(self.calls[-1]) else None
+        """The call whose reply ended the turn (None if it never ended).
+
+        A reply followed by a generation_error note was retried (protocol.generate),
+        so it didn't end the turn. Which replies get retried has changed over time,
+        so the note decides, not the reply's stop reason.
+        """
+        last = self.steps[-1]
+        if isinstance(last, ModelEvent) and not last.output.message.tool_calls:
+            return last
+        return None
 
 
-def ends_turn(call: ModelEvent) -> bool:
-    # A generation the provider failed partway through is retried (protocol.generate).
-    return not call.output.message.tool_calls and call.output.stop_reason != "unknown"
+def served(call: ModelEvent) -> bool:
+    """Whether the conversation continued from this call's reply.
+
+    Inspect also logs failed attempts (with an error) and, in some E03 logs, an
+    empty twin of a call that never completed; neither is part of the conversation.
+    """
+    return call.error is None and call.completed is not None
 
 
 def transcript_items(sample: EvalSample) -> list[Turn | InfoEvent]:
@@ -81,9 +93,9 @@ def transcript_items(sample: EvalSample) -> list[Turn | InfoEvent]:
     counts: Counter[str] = Counter()
     turn = None
     for event in sample.events:
-        if isinstance(event, ModelEvent):
+        if isinstance(event, ModelEvent) and served(event):
             role = roles.get(event.span_id or "", "model")
-            if turn is None or turn.role != role or ends_turn(turn.calls[-1]):
+            if turn is None or turn.role != role or turn.final:
                 counts[role] += 1
                 turn = Turn(role, counts[role])
                 items.append(turn)
