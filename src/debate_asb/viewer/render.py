@@ -14,11 +14,16 @@ SCRIPTS = ("dom.js", "components.js", "report.js")
 
 def render_report(report: ReportView) -> str:
     """Return a self-contained report with no network dependencies."""
+    return render_report_data(report.to_dict())
+
+
+def render_report_data(payload: dict) -> str:
+    """Render a saved report payload, preserving its original log content."""
     package = files("debate_asb.viewer") / "static"
     template = (package / "report.html").read_text()
     css = (package / "report.css").read_text()
     javascript = "\n\n".join((package / name).read_text() for name in SCRIPTS)
-    data = json.dumps(report.to_dict(), ensure_ascii=False).replace("<", "\\u003c")
+    data = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c")
     return (
         template.replace("/* REPORT_CSS */", css)
         .replace("/* REPORT_JS */", javascript)

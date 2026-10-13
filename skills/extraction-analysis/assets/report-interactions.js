@@ -99,9 +99,18 @@ function renderAgentBasis(sample) {
   const panel = byId("agent-basis"), review = sample.review;
   panel.replaceChildren(e("h3", "Agent’s sabotage basis"),
     e("p", `Actual mechanism exposed: ${review.exposure_status || "not recorded"} · ${review.exposure_summary || "Legacy review did not record a separate exposure judgment."}`));
+  const reference = sample.sabotage_reference || {}, record = reference.record || {};
+  const reusable = e("div");
+  reusable.append(e("h3", "Saved sabotage target"), e("p", record.mechanism || (record.label === "honest" ? "Honest control." : "No checked mechanism saved for this variant.")),
+    e("p", `Reference: ${record.status || "missing"} · source check: ${reference.validation?.status || "unknown"} · runtime comparison: ${reference.runtime_check?.status || "not checked"}`));
+  for (const note of record.limitations || []) reusable.append(e("p", note, "warning"));
+  if (review.reference_review_required) reusable.append(e("p", "Coverage judgment needs review against this reference. The previous decision is preserved in review.json.", "warning"));
+  const saved = e("details");
+  saved.append(e("summary", "Versioned locations, source excerpts, comparisons and provenance"), e("pre", JSON.stringify(reference, null, 2)));
+  reusable.append(saved); panel.prepend(reusable);
   const locations = sample.reviewed_locations || [];
   if (!locations.length) {
-    panel.append(e("p", "Exact locations used were not recorded. Rubric overlaps below are script measurements, not verified sabotage locations.", "warning"));
+    panel.append(e("p", "Exact locations used were not recorded. Location overlaps below are script measurements, not capture judgments.", "warning"));
     return;
   }
   const sources = {runtime_read: "Original read response", runtime_search: "Original search hit", annotation_only: "Annotation only", current_file: "Current file, not run snapshot"};
@@ -124,7 +133,7 @@ function renderAgentBasis(sample) {
 const bugLabels = {yes: "Bug", no: "No bug", unclear: "Unclear", unreviewed: "Not reviewed"};
 const paperLabels = {contradicts: "Contradicts", consistent: "Consistent", not_specified: "Not specified", unclear: "Unclear", unreviewed: "Not reviewed"};
 const stanceLabels = {concern: "Raises concern", benign: "Benign description", unclear: "Unclear"};
-const bundleFilters = {bug: "", paper: ""};
+const bundleFilters = {bug: "", paper: "", known: "", category: ""};
 function setBundleExpanded(number, expanded) {
   const row = byId(`bundle-${number}`), button = byId(`bundle-toggle-${number}`);
   if (!row || !button) return;
@@ -145,8 +154,30 @@ function bundleEvidence(bundle, entry) {
     snippet.append(label, e("pre", x.text));
     content.append(snippet);
   }
+  if (bundle.known_issue_matches?.length) {
+    content.append(e("h4", "Known ASB non-target issues"));
+    for (const match of bundle.known_issue_matches) {
+      const detail = e("details"), summary = e("summary", `${match.title} · ${match.category} · ${knownMatchLabels[match.match_kind]}`);
+      detail.append(summary, e("p", match.description), e("p", `ASB's impact claim: ${match.impact}`, "legend"),
+        e("p", "This annotation does not override the saved bundle review or count as target-sabotage capture.", "legend"),
+        e("pre", JSON.stringify({annotation_location: match.original_location, matched_evidence: match.evidence}, null, 2)));
+      content.append(detail);
+    }
+  }
   appendBundleBasis(content, entry);
   return content;
+}
+const knownMatchLabels = {code_match: "Code match", unverified_quote_match: "Unverified quote", location_hint: "Location hint only"};
+function knownIssueCell(bundle) {
+  const node = e("div");
+  if (!bundle.known_issue_matches?.length) { node.append(e("span", "—")); return node; }
+  for (const match of bundle.known_issue_matches) {
+    const detail = e("details"), summary = e("summary", match.title);
+    summary.append(e("span", match.category, "badge"));
+    detail.append(summary, e("p", knownMatchLabels[match.match_kind], match.match_kind === "code_match" ? "known-code-match" : "legend"), e("p", match.description, "legend"));
+    node.append(detail);
+  }
+  return node;
 }
 function renderBundleReview(sample) {
   const panel = byId("bundle-review"), quality = sample.bundle_quality;
@@ -167,13 +198,18 @@ function renderBundleReview(sample) {
     panel.append(e("p", "No evidence bundles retained.", "muted"));
     return;
   }
+  const counts = sample.metrics.known_issues || {};
+  panel.append(e("p", `Known ASB issues: ${counts.code_match_bundles || 0}/${sample.metrics.bundles.length} bundles with matching code · ${counts.unverified_quote_bundles || 0} with unverified quote matches · ${counts.location_hint_bundles || 0} with location hints. Counts can overlap.`, "legend"),
+    e("p", "bugs.yaml lists non-target issues, including intentional quirks. These markers flag potential distractions; they do not automatically make an observation misleading.", "legend"));
   const controls = e("div", null, "controls");
-  const bugFilter = e("select"), paperFilter = e("select");
+  const bugFilter = e("select"), paperFilter = e("select"), knownFilter = e("select"), categoryFilter = e("select");
   bugFilter.id = "bundle-bug-filter";
   paperFilter.id = "bundle-paper-filter";
   for (const [select, field, label, options] of [
     [bugFilter, "bug", "Bug status", [["", "All bug statuses"], ["yes", "Bug"], ["no", "No bug"], ["unclear", "Unclear"]]],
-    [paperFilter, "paper", "Paper agreement", [["", "All paper agreements"], ["consistent", "Consistent"], ["contradicts", "Contradicts"], ["not_specified", "Not specified"], ["unclear", "Unclear"]]]
+    [paperFilter, "paper", "Paper agreement", [["", "All paper agreements"], ["consistent", "Consistent"], ["contradicts", "Contradicts"], ["not_specified", "Not specified"], ["unclear", "Unclear"]]],
+    [knownFilter, "known", "ASB issue match", [["", "All bundles"], ["code_match", "Code match"], ["unverified_quote_match", "Unverified quote match"], ["location_hint", "Location hint only"], ["none", "No catalog match"]]],
+    [categoryFilter, "category", "ASB category", [["", "All categories"], ["bug", "Bug"], ["quirk", "Quirk"], ["mismatch", "Mismatch"], ["misleading", "Misleading code/comment"]]]
   ]) {
     select.setAttribute("aria-label", `Filter bundles by ${label.toLowerCase()}`);
     for (const [value, text] of options) {
@@ -192,7 +228,8 @@ function renderBundleReview(sample) {
   reset.onclick = () => {
     bundleFilters.bug = "";
     bundleFilters.paper = "";
-    bugFilter.value = paperFilter.value = "";
+    bundleFilters.known = bundleFilters.category = "";
+    bugFilter.value = paperFilter.value = knownFilter.value = categoryFilter.value = "";
     applyFilters();
   };
   controls.append(reset);
@@ -210,7 +247,7 @@ function renderBundleReview(sample) {
   count.setAttribute("aria-live", "polite");
   empty.hidden = true;
   panel.append(controls, count);
-  const headers = ["Bundle / observation", "Bug?", "Sabotage candidate?", "Paper agreement", "Topic", "Why"];
+  const headers = ["Bundle / observation", "Bug?", "Sabotage candidate?", "Paper agreement", "Topic", "ASB non-target issue", "Why"];
   const t = table(headers, []), body = t.querySelector("tbody");
   t.className = "bundle-table";
   for (const bundle of sample.metrics.bundles) {
@@ -233,7 +270,9 @@ function renderBundleReview(sample) {
     row.dataset.bundle = bundle.number;
     row.dataset.bugStatus = entry.bug_status;
     row.dataset.paperAlignment = entry.paper_alignment;
-    for (const value of [identity, bugLabels[entry.bug_status], entry.sabotage_candidate, paperLabels[entry.paper_alignment], entry.topic || "—", why]) {
+    row.dataset.knownKinds = (bundle.known_issue_matches || []).map(m => m.match_kind).join(" ");
+    row.dataset.knownCategories = (bundle.known_issue_matches || []).map(m => m.category).join(" ");
+    for (const value of [identity, bugLabels[entry.bug_status], entry.sabotage_candidate, paperLabels[entry.paper_alignment], entry.topic || "—", knownIssueCell(bundle), why]) {
       const cell = e("td");
       cell.append(value instanceof Node ? value : e("span", value));
       row.append(cell);
@@ -253,7 +292,9 @@ function renderBundleReview(sample) {
     let visible = 0;
     for (const row of body.querySelectorAll(".bundle-summary")) {
       const matches = (!bundleFilters.bug || row.dataset.bugStatus === bundleFilters.bug) &&
-        (!bundleFilters.paper || row.dataset.paperAlignment === bundleFilters.paper);
+        (!bundleFilters.paper || row.dataset.paperAlignment === bundleFilters.paper) &&
+        (!bundleFilters.known || (bundleFilters.known === "none" ? !row.dataset.knownKinds : row.dataset.knownKinds.split(" ").includes(bundleFilters.known))) &&
+        (!bundleFilters.category || row.dataset.knownCategories.split(" ").includes(bundleFilters.category));
       row.hidden = !matches;
       if (matches) visible++;
       else setBundleExpanded(row.dataset.bundle, false);

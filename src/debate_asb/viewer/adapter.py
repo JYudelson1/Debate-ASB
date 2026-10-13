@@ -89,7 +89,10 @@ def _adapt_sample(sample: Any) -> SampleView:
         bundles=bundle_views,
         aggregation=_optional_dict(store.get("aggregation")),
         rubric=load_rubric_context(
-            str(sample.id), target, _optional_dict(metadata.get("answer_key"))
+            str(sample.id),
+            target,
+            _optional_dict(metadata.get("answer_key")),
+            _as_dict(_as_dict(metadata.get("artifacts")).get("codebase")).get("root"),
         ),
         error=error,
         provenance=_provenance(sample, stages, store, transcript),
