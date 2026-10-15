@@ -1,7 +1,9 @@
 """Code execution: run_bash in a Docker sandbox holding a read-only copy of the codebase."""
 
 import subprocess
+import sys
 import tarfile
+import time
 from pathlib import Path
 
 import pytest
@@ -27,14 +29,18 @@ def test_run_bash_is_a_tool_only_with_code_execution(tmp_path):
 
 
 class FakeSandbox:
-    """Records exec calls; answers like a sandbox would."""
+    """Records exec calls and written files; answers like a sandbox would."""
 
     def __init__(self):
         self.calls = []
+        self.writes = []
 
     async def exec(self, cmd, cwd=None, user=None, timeout=None, **kwargs):
         self.calls.append({"cmd": cmd, "cwd": cwd, "user": user})
         return ExecResult(success=True, returncode=0, stdout="hello\n", stderr="")
+
+    async def write_file(self, file, contents):
+        self.writes.append((file, contents))
 
 
 def test_participants_are_told_the_real_timeout():
@@ -114,7 +120,9 @@ def test_task_with_code_execution(script, fake_sandbox, archive_cache, tmp_path)
         (asb_samples(["lazy_alpha"])[0].metadata or {})["artifacts"]["codebase"]["root"]
     )
     archive = task_module._codebase_archive(root)
-    assert sample.files == {"/tmp/workspace.tar.gz": str(archive)}
+    # Copied in by the solver, not by Inspect: Sample.files would hold it in memory.
+    assert not sample.files
+    assert (sample.metadata or {})["workspace_archive"] == str(archive)
     with tarfile.open(archive) as tar:
         assert set(tar.getnames()) == {
             p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()
@@ -127,11 +135,10 @@ def test_task_with_code_execution(script, fake_sandbox, archive_cache, tmp_path)
 
     # Run it without Docker: the fake sandbox stands in.
     task.sandbox = None
-    for s in task.dataset:
-        s.files = None
     log = run(task, tmp_path)
     assert log.samples is not None
     [sample] = log.samples
+    assert fake_sandbox.writes == [("/tmp/workspace.tar.gz", archive.read_bytes())]
     [setup, command] = fake_sandbox.calls
     assert setup["user"] == "root"
     assert setup["cmd"][-1].startswith(
@@ -142,6 +149,38 @@ def test_task_with_code_execution(script, fake_sandbox, archive_cache, tmp_path)
     assert command["cmd"] == ["bash", "-c", "python -c 'print(1)'"]
     system = model_calls(sample, "judge")[0].input[0].text
     assert "DO NOT RUN EXPERIMENTS" in system and "`run_bash`" in system
+
+
+@pytest.mark.asyncio
+async def test_machine_lock_waits_for_another_process(tmp_path):
+    lock = tmp_path / "copy.lock"
+    holder = subprocess.Popen(
+        [sys.executable, "-c", HOLD_LOCK, str(lock)], stdout=subprocess.PIPE, text=True
+    )
+    try:
+        assert holder.stdout is not None and holder.stdout.readline() == "held\n"
+        start = time.monotonic()
+        async with task_module._machine_lock(lock):
+            waited = time.monotonic() - start
+    finally:
+        holder.wait(timeout=10)
+    assert waited >= 1.0  # the holder keeps it for 1.5 s
+    async with task_module._machine_lock(lock):  # and it can be taken again
+        pass
+
+
+HOLD_LOCK = """
+import sys, time, anyio
+from pathlib import Path
+from debate_asb.task import _machine_lock
+
+async def main():
+    async with _machine_lock(Path(sys.argv[1])):
+        print("held", flush=True)
+        time.sleep(1.5)
+
+anyio.run(main)
+"""
 
 
 def test_execute_prompts_are_asb_text_minus_modal():
