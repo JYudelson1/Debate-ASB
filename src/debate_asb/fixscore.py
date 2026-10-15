@@ -38,9 +38,9 @@ from inspect_ai.log import EvalSample, read_eval_log, read_eval_log_samples
 from inspect_ai.scorer import Score, Target, mean, scorer
 from inspect_ai.solver import Generate, TaskState, solver
 
+from debate_asb import protocol
 from debate_asb.datasets.asb import ASB_ROOT
 from debate_asb.models import ModelSpec, Participant, ReasoningEffort
-from debate_asb.protocol import generate
 from debate_asb.sabotage import read_registry, resolve_sabotage
 
 # Import ASB's grader without blue_teaming/__init__.py, which needs inspect_swe.
@@ -257,8 +257,8 @@ def bucket(raw: int) -> int:
 
 @solver
 def grade(grader: Participant):
-    async def solve(state: TaskState, _generate: Generate) -> TaskState:
-        state.output = await generate(grader, "grader", state.messages)
+    async def solve(state: TaskState, generate: Generate) -> TaskState:
+        state.output = await protocol.generate(grader, "grader", state.messages)
         return state
 
     return solve
