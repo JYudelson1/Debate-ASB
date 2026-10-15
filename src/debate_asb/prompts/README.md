@@ -89,9 +89,10 @@ determine whether..." isn't true of a debater.
   that ends "Respond directly to your opponent's strongest points." only when
   `state_probability=False` (the debate's `debaters_state_probability` task
   arg). `debater.md` has an empty `{probability_rule}` slot there, so the
-  default prompt is unchanged. Why: debaters often state their own probability
-  (taking up the auditors' calibration bands in `game_rules.md`), and this lets
-  a run test whether that sways the judge.
+  default prompt is unchanged. Why: debaters often stated their own probability,
+  taking up the auditors' calibration bands, which `game_rules.md` held until
+  the calibration section moved to `judge_answer.md`; this let a run (E03's P3)
+  test whether that sways the judge.
 
 Protocol-specific framing that judges see in their user message (the debate
 and consultation intros) is in the protocol modules, and is also ours.
