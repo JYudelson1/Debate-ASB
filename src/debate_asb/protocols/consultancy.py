@@ -18,7 +18,7 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 from inspect_ai import task
-from inspect_ai.model import ChatMessageSystem, ChatMessageUser
+from inspect_ai.model import ChatMessage, ChatMessageSystem, ChatMessageUser
 
 from debate_asb.datasets import Dataset, load_samples
 from debate_asb.models import (
@@ -103,7 +103,7 @@ class Consultancy:
                 content=f"{sample.task}\n\n{CONSULTATION_INTRO.format(claim=claim, n_rounds=self.n_rounds)}"
             ),
         ]
-        consultant_messages = [
+        consultant_messages: list[ChatMessage] = [
             ChatMessageSystem(
                 content=consultant.system_prompt
                 or sample.prompts.consultant(
@@ -206,7 +206,7 @@ def consultancy(
     n_rounds: int = 3,
     code_execution: bool = False,
     replay: str | None = None,
-    reuse: str | list[str] = (),
+    reuse: str | list[str] | tuple[str, ...] = (),
 ):
     protocol = Consultancy(
         consultant=Participant(ModelSpec(consultant_model, consultant_provider)),

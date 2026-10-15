@@ -45,6 +45,8 @@ class Trajectory(Artifact):
         sample_uuid: str | None = None,
     ):
         if messages is None:
+            if eval_log is None:
+                raise ValueError("Trajectory needs messages or an eval_log")
             sample = read_eval_log_sample(
                 eval_log, uuid=sample_uuid, resolve_attachments=True
             )
@@ -84,7 +86,10 @@ class Trajectory(Artifact):
             pattern: Python regular expression.
             ignore_case: Case-insensitive matching.
         """
-        regex = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
+        try:
+            regex = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
+        except re.error as error:
+            return f"Invalid regular expression: {error}"
         hits = [
             f"step {i}: {_summary(m)}"
             for i, m in enumerate(self.steps)

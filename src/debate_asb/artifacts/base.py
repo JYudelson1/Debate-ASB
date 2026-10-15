@@ -21,7 +21,7 @@ silently truncated dump makes the baseline meaningless.
 
 import functools
 import inspect
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar, overload
 
 from inspect_ai.tool import Tool, ToolDef
 
@@ -30,14 +30,29 @@ class ArtifactTooLarge(Exception):
     """dump_all() won't fit in the context window. Deliberately not truncated."""
 
 
+PrimitiveMethod = TypeVar("PrimitiveMethod", bound=Callable[..., Any])
+
+
+@overload
+def primitive(
+    method: PrimitiveMethod, *, enabled_if: str | None = None
+) -> PrimitiveMethod: ...
+
+
+@overload
+def primitive(
+    method: None = None, *, enabled_if: str | None = None
+) -> Callable[[PrimitiveMethod], PrimitiveMethod]: ...
+
+
 def primitive(
     method: Callable[..., Any] | None = None, *, enabled_if: str | None = None
 ):
     """Mark an artifact method as a primitive, so tools() exposes it to participants."""
 
-    def mark(method: Callable[..., Any]) -> Callable[..., Any]:
-        method._is_primitive = True
-        method._enabled_if = enabled_if
+    def mark(method: PrimitiveMethod) -> PrimitiveMethod:
+        setattr(method, "_is_primitive", True)
+        setattr(method, "_enabled_if", enabled_if)
         return method
 
     return mark(method) if method is not None else mark

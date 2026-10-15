@@ -62,7 +62,7 @@ def lone_judge(
     max_cost: float = 3.0,
     code_execution: bool = False,
     replay: str | None = None,
-    reuse: str | list[str] = (),
+    reuse: str | list[str] | tuple[str, ...] = (),
 ):
     judge = Participant(
         ModelSpec(judge_model, judge_provider, reasoning_effort=judge_reasoning_effort)

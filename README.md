@@ -43,6 +43,7 @@ uv run inspect eval src/debate_asb/protocols/lone_judge.py --model none --log-mo
 
 uv run inspect view                                   # browse transcripts
 uv run python -m debate_asb.runner logs/<file>.eval   # AUROC, catch rate, credences, cost per run and role
+uv run python -m debate_asb.viewer logs/<file>.eval   # bundle-first standalone HTML report
 ```
 
 - `--model none`: each participant's model comes from task arguments
@@ -62,7 +63,8 @@ Protocols shipped:
 | Full-context judge | `protocols/full_context_judge.py` | Whole codebase in one prompt, no tools, one answer. |
 | Debate | `protocols/simple_debate.py` | Two debaters on opposite sides take turns (investigating privately); a judge decides. |
 | Consultancy | `protocols/consultancy.py` | One consultant argues a (by default random) side; a judge questions it, then decides. |
-| Extract-and-evaluate | `protocols/extract_and_evaluate.py` | **Deliberate stub**: mentee work. |
+| Extract-and-evaluate | `protocols/extract_and_evaluate.py` | Extract ten evidence bundles, debate and judge each independently, then take the maximum bundle credence. |
+| Trusted-vs-untrusted debate | `protocols/t_vs_u_debate.py` | Debate where one debater is told the sabotage and secretly works for a "not sabotaged" verdict; the judge knows which debater is untrusted. MonitoringBench and ASB, sabotaged samples only. |
 
 ## How the code is organised
 
@@ -72,6 +74,7 @@ src/debate_asb/
   protocols/          one file per protocol; start by reading lone_judge.py
   artifacts/          Codebase, Trajectory: primitives usable directly or as participant tools
   datasets/           ASB (codebases), MonitoringBench (trajectories)
+  viewer/             bundle-first HTML reports for complete or partial eval logs
   models.py           ModelSpec (pinned provider), Participant, Side
   prompts/            participant prompts, one folder per setting; provenance in prompts/README.md
 docker/               the code-execution sandbox
@@ -102,7 +105,9 @@ tools until it answers; `note()` writes to the protocol's own transcript. Add a
   know why.
 - **Protocols can read artifacts themselves**, too: `sample.codebase.read_file(...)`
   is the same function the participants' `read_file` tool calls.
-- **Protocols never see the label or the answer key.**
+- **Protocols never see the label or the answer key**, unless they set
+  `sees_answer_key = True` to brief an untrusted participant (only
+  `t_vs_u_debate.py` does).
 - **Prompts should only say true things.** Get prompts from `sample.prompts`
   (the right set for the sample's dataset), and pass `access_for(tools)` so
   the access paragraph matches what the participant can actually do.
@@ -148,7 +153,7 @@ experiments" text. Details:
   user), so one participant can't change code another will run. Scratch work
   goes in `~`. All participants in a sample share one sandbox, so they can see
   each other's scratch files.
-- Every command is killed after 60 seconds.
+- Every command is killed after 300 seconds.
 - No network, no GPU. Python 3.12 with the packages ASB codebases most often
   import, CPU-only: torch, torchvision, transformers, datasets, peft, the usual
   scientific stack, and the openai/anthropic SDKs (so modules import; API calls
@@ -188,6 +193,11 @@ experiments" text. Details:
   while a single big call gets no discount (full-context judge 1.0). So nominal
   cost makes agentic protocols look ~2.5× pricier *relative to* single-call
   ones than they really are. Budgets (`max_cost`) are nominal. Report both.
+- **Reasoning effort.** `ModelSpec(..., reasoning_effort="high")` sets it for
+  reasoning models (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
+  which ones a model accepts varies). Unset means the provider's default, which
+  the log then doesn't record, so set it explicitly when comparing runs. The
+  debate and T-vs-U tasks take it per role, e.g. `-T judge_reasoning_effort=high`.
 - **Budgets.** Each agentic loop has `max_steps` and `max_cost` (nominal USD);
   when either runs out, the participant must answer.
 
@@ -226,7 +236,8 @@ experiments" text. Details:
 - **MonitoringBench** trajectories are shown in the "output only" view by
   default: the agent's task, its tool calls and their outputs, but not its own
   text or reasoning (as MonitoringBench's monitors see them). The attacker's
-  instructions are in the logs' metadata, never in what participants see.
+  instructions are in the logs' metadata, never in what participants see
+  (except the untrusted debater of `t_vs_u_debate.py`, which is told them).
 
 ### MonitoringBench `pilot_v1` preset
 
@@ -251,6 +262,68 @@ The preset uses fixed sample UUIDs. Fetching is additive, so omit
 `sample_ids=pilot_v1` only when you want to run every locally available trajectory.
 
 ## Reading results
+
+For extract-and-evaluate runs, generate a local report that groups evidence,
+debate turns, judge output and tool activity by bundle:
+
+```bash
+uv run python -m debate_asb.viewer logs/<file>.eval
+# writes artifacts/viewer/<file>.html; override with -o path/to/report.html
+```
+
+The report opens in blind mode. “Reveal sabotage reference” shows the tracked,
+versioned corrections: checked mechanisms, precise locations, source evidence and
+explicit uncertainty. Original rubric and logged claims remain separate. The
+reference never reaches evaluation participants. Partial and failed runs retain
+whatever stages completed before the error.
+
+The [sabotage reference workflow](docs/sabotage-reference.md) explains validation,
+collaborator use, corrections and migration of existing reports. Ten core code
+mechanisms are verified; `awareness_lens` retains unresolved cached-vector
+provenance. Other variants are explicitly pending rather than inheriting a target.
+
+```bash
+uv run python -m debate_asb.sabotage validate
+uv run python -m debate_asb.sabotage_explorer   # docs/sabotage-explorer.html
+uv run python scripts/refresh_sabotage_reports.py
+```
+
+A "Transcript health" panel and per-turn callouts flag protocol edge cases
+that affect how far a transcript can be trusted. Examples are tool history
+flattened after a provider rejection, arguments that are only an unexecuted
+`[called …]` tool call, missing judge credences, exhausted tool budgets,
+replayed stages and sample errors. To add a check, write a function in
+`viewer/diagnostics.py` and list it in `CHECKS`.
+
+For post-hoc extraction coverage and inspection patterns, use the
+[`extraction-analysis` skill](skills/extraction-analysis/SKILL.md). It collects
+executed extraction traces, saves a semantic sabotage review, and renders a
+standalone HTML report with coverage, file/region hotspots and inspection-to-evidence
+flows. Each bundle receives an agent review of bug status, viable sabotage
+candidacy, paper agreement and topic; rendering requires completed bundle reviews.
+It does not run evaluations or change the protocol.
+The [sabotage explorer](docs/sabotage-reference.md#sabotage-explorer-and-non-target-issues)
+provides readable mechanisms and paired source comparisons. The standalone
+[`docs/sabotage-explorer.html`](docs/sabotage-explorer.html) can be committed and
+opened directly by collaborators without local logs. Extraction reports also
+flag the known non-target issues in ASB's `bugs.yaml`, preserving category and
+match strength. Verified quoted signatures, unverified quote matches and location
+hints remain distinct; these flags do not override saved bug judgments or target
+coverage. The bundle table filters these markers alongside bug/paper judgments.
+
+Run-specific reports, traces, and completed review ledgers remain local under
+`artifacts/extraction-analysis/`; preserve them separately when archiving a run.
+Incomplete extraction traces cannot establish non-exposure; see the skill's
+[documented limitation](skills/extraction-analysis/references/metrics.md#incomplete-extraction-traces).
+
+```bash
+uv run python skills/extraction-analysis/scripts/analyze.py collect \
+    --repo . --log logs/<file>.eval --out artifacts/extraction-analysis/<file>
+# Complete the generated review.json using the skill's review criteria.
+uv run python skills/extraction-analysis/scripts/analyze.py render \
+    --analysis artifacts/extraction-analysis/<file>/analysis.json \
+    --review artifacts/extraction-analysis/<file>/review.json
+```
 
 - **There's no published ASB number for our exact setting.** ASB's headline
   0.77 AUROC (Gemini 3.1 Pro) is with full code execution, averaged per sample
@@ -280,3 +353,18 @@ The preset uses fixed sample UUIDs. Fetching is additive, so omit
   that always says "sabotaged" catches 100%.
 - A judge that never gives a parseable credence scores NaN. Inspect leaves it
   out of AUROC and reports it as `unscored_samples`; the runner counts it per run.
+
+## Local checks
+
+```bash
+uv sync --locked
+uv run ruff check .
+uv run ruff format --check .
+uv run pyright
+uv run pytest
+```
+
+Pyright uses the same type-checking engine as Pylance. Its configuration checks
+`src/` and `tests/` with the project `.venv`, excluding downloaded datasets and
+generated reports. VS Code selects the same interpreter by default. The Docker
+integration test is skipped when Docker is unavailable.

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ASB sabotage explorer</title><style>/* EXPLORER_CSS */</style></head>
+<body>
+<header><div><span class="eyebrow">Debate ASB · analysis reference</span><h1>Sabotage explorer</h1><p>Checked mechanisms and code comparisons, kept separate from other ASB issues.</p></div><div id="registry-info" class="registry-info"></div></header>
+<main>
+<aside aria-label="Choose a codebase">
+<label class="search-label" for="search">Find a codebase</label><input id="search" type="search" placeholder="Name, paper, or mechanism…">
+<label class="sr-only" for="scope">Reference scope</label><select id="scope"><option value="checked">Checked sabotage targets</option><option value="sabotaged">All sabotaged variants</option><option value="all">All variants, including honest controls</option></select>
+<label class="sr-only" for="family">Paper family</label><select id="family"><option value="">All papers</option></select>
+<p id="list-count" class="muted" aria-live="polite"></p><nav id="sample-list" aria-label="Codebases"></nav>
+</aside>
+<article id="detail" aria-live="polite"></article>
+</main>
+<footer>Source snapshots describe the saved reference. This page works offline.</footer>
+<script id="explorer-data" type="application/json">EXPLORER_DATA</script><script>/* EXPLORER_JS */</script>
+</body></html>

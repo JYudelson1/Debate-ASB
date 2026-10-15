@@ -33,6 +33,7 @@ import urllib.request
 from dataclasses import dataclass
 from enum import Enum
 from functools import cache
+from typing import Literal
 
 from inspect_ai.model import CachePolicy, GenerateConfig, Model, ModelUsage, get_model
 from inspect_ai.util import store
@@ -42,7 +43,10 @@ OPENROUTER_API = "https://openrouter.ai/api/v1"
 # Default for every role. Gemini 3.1 Pro was ASB's best auditor.
 DEFAULT_MODEL = "google/gemini-3.1-pro-preview"
 DEFAULT_PROVIDER = "google-ai-studio"
-SERVICE_TIER_SUFFIXES = {"flex", "priority", "fast"}
+SERVICE_TIER_SUFFIXES = {"flex", "priority", "fast", "ultrafast"}
+
+# The reasoning efforts Inspect accepts; which ones a model supports varies.
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 
 @dataclass(frozen=True)
@@ -87,15 +91,15 @@ class ModelSpec:
             differ in quantization or price, you must use the full tag.
         temperature: Sampling temperature (None = provider default).
         max_tokens: Max output tokens per call (None = provider default).
-        reasoning_effort: e.g. "none", "medium", "xhigh" (None = provider default).
-            Which values a model accepts is up to the model; see its OpenRouter page.
+        reasoning_effort: For reasoning models, e.g. "medium", "high" or "max"
+            (None = provider default, which the log then doesn't record).
     """
 
     model: str
     provider: str
     temperature: float | None = None
     max_tokens: int | None = None
-    reasoning_effort: str | None = None
+    reasoning_effort: ReasoningEffort | None = None
 
     def __post_init__(self) -> None:
         if not self.provider:
@@ -109,8 +113,8 @@ class ModelSpec:
         return get_model(
             f"openrouter/{self.model}",
             provider={"order": [self.provider], "allow_fallbacks": False},
-            # Inspect marks tools strict by default. OpenAI then requires every
-            # parameter to be required, which our optional ones aren't (400 error).
+            # Our tools have optional arguments, which OpenAI's strict function
+            # schemas reject outright (every call fails with a 400).
             strict_tools=False,
             config=GenerateConfig(
                 temperature=self.temperature,

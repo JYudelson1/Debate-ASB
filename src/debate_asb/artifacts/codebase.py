@@ -40,7 +40,7 @@ DUMP_MAX_FILE_BYTES = 200_000
 WORKSPACE = "/workspace"
 SANDBOX_USER = "auditor"
 MAX_OUTPUT_CHARS = 20_000
-COMMAND_TIMEOUT_SECONDS = 60  # every run_bash command is killed after this
+COMMAND_TIMEOUT_SECONDS = 300  # every run_bash command is killed after this
 
 
 class Codebase(Artifact):
@@ -125,9 +125,8 @@ class Codebase(Artifact):
         """
         try:
             regex = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
-        except re.error as e:
-            # A ToolError goes back to the model; re.error would fail the sample.
-            raise ToolError(f"Invalid regular expression: {e}") from e
+        except re.error as error:
+            return f"Invalid regular expression: {error}"
         matches = []
         for file in self._files(self._resolve(directory)):
             if file.stat().st_size > MAX_SEARCH_FILE_BYTES or _is_binary(file):
@@ -191,7 +190,7 @@ class Codebase(Artifact):
 
         The command runs in /workspace, which holds the codebase and is read-only.
         To modify code, copy it to your home directory (~) first. Each command is
-        killed after 60 seconds. There is no network access and no GPU.
+        killed after 300 seconds. There is no network access and no GPU.
 
         Args:
             command: The bash command to run.

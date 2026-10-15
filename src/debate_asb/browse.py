@@ -1,6 +1,6 @@
 """Read transcripts in a browser: every log under a directory, every sample, every turn.
 
-    uv run python -m debate_asb.viewer ../experiments    # then open http://127.0.0.1:8765
+    uv run python -m debate_asb.browse ../experiments    # then open http://127.0.0.1:8765
 
 A sample's page shows its participants' turns in order. Each turn's final
 reply (a debater's argument, the judge's answer) is open; what led to it (the

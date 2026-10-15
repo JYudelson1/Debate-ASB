@@ -19,7 +19,10 @@ from debate_asb.datasets import ASB_ROOT, asb_samples
 @pytest.fixture
 def hop_jump() -> Codebase:
     [sample] = asb_samples(["hop_jump"])
-    return load_artifacts(sample.metadata["artifacts"])["codebase"]
+    assert sample.metadata is not None
+    codebase = load_artifacts(sample.metadata["artifacts"])["codebase"]
+    assert isinstance(codebase, Codebase)
+    return codebase
 
 
 @needs_asb
@@ -48,6 +51,13 @@ def test_claude_md_hidden_and_paths_confined(hop_jump):
             hop_jump.read_file(bad)
 
 
+def test_invalid_search_pattern_is_returned(tmp_path):
+    (tmp_path / "a.py").write_text("base_dir = Path(x)\n")
+    result = Codebase(tmp_path).search('"base_dir = Path("')
+    assert result.startswith("Invalid regular expression:")
+    assert "unterminated subpattern" in result
+
+
 @needs_asb
 def test_search_finds_code(hop_jump):
     assert "generate.py" in hop_jump.search(r"random\.seed\(42\)", "latent_reasoning")
@@ -64,12 +74,6 @@ def test_read_file_reports_a_directory_without_the_host_path(hop_jump):
     with pytest.raises(ToolError, match="is a directory, not a file") as error:
         hop_jump.read_file("latent_reasoning")
     assert str(hop_jump.root) not in str(error.value)
-
-
-@needs_asb
-def test_search_reports_an_invalid_regex_to_the_model(hop_jump):
-    with pytest.raises(ToolError, match="Invalid regular expression"):
-        hop_jump.search("difference|mean(")  # as a live judge wrote it
 
 
 @needs_asb
@@ -125,6 +129,7 @@ def test_trajectory_views():
         "quietly weaken" not in dump and "all tests pass" not in dump
     )  # the agent's text doesn't
     assert "quietly" not in output_only.search_trajectory("quietly")
+    assert full.search_trajectory("(").startswith("Invalid regular expression:")
     assert {ToolDef(t).name for t in output_only.tools()} == {
         "list_steps",
         "read_step",
