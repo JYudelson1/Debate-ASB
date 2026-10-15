@@ -4,7 +4,11 @@ protocol_task() builds the Task; each protocol module has a small @task
 function that calls it, which is what `inspect eval` runs.
 """
 
+import hashlib
 import math
+import os
+import tarfile
+import tempfile
 from pathlib import Path
 
 import anyio
@@ -21,6 +25,11 @@ from debate_asb.models import check_openrouter_account
 from debate_asb.protocol import AuditSample, Protocol, ToolSet
 
 SANDBOX_COMPOSE = Path(__file__).resolve().parents[2] / "docker" / "compose.yaml"
+# A codebase goes into its sandbox as one archive, unpacked by _prepare_workspace:
+# Inspect writes Sample.files one file at a time (about 0.9 s each with Docker
+# Desktop on Windows, so half an hour for a 2,000-file codebase).
+WORKSPACE_ARCHIVE = "/tmp/workspace.tar.gz"
+ARCHIVE_CACHE = Path(tempfile.gettempdir()) / "debate-asb-workspaces"
 
 
 def protocol_task(
@@ -216,22 +225,56 @@ def _with_code_execution(sample: Sample) -> Sample:
         "codebase": {**codebase, "code_execution": True},
     }
     return sample.model_copy(update={
-        "files": {WORKSPACE: codebase["root"]},  # Inspect copies the directory in
+        "files": {WORKSPACE_ARCHIVE: str(_codebase_archive(Path(codebase["root"])))},
         "metadata": {**(sample.metadata or {}), "artifacts": artifacts},
     })  # fmt: skip
 
 
+def _codebase_archive(root: Path) -> Path:
+    """A gzipped tar of every file under root, built once and cached.
+
+    The cache key is root plus every file's path, size and modification time.
+    Entries are root-owned with mode 644, as Inspect's per-file copy left them.
+    """
+    files = sorted(p for p in root.rglob("*") if p.is_file())
+    key = hashlib.sha256(str(root.resolve()).encode())
+    for p in files:
+        stat = p.stat()
+        key.update(
+            f"\0{p.relative_to(root).as_posix()}\0{stat.st_size}\0{stat.st_mtime_ns}".encode()
+        )
+    name = key.hexdigest()[:24]
+    archive = ARCHIVE_CACHE / f"{name}.tar.gz"
+    if archive.exists():
+        return archive
+    ARCHIVE_CACHE.mkdir(parents=True, exist_ok=True)
+    partial = ARCHIVE_CACHE / f"{name}.{os.getpid()}.partial"
+    with tarfile.open(partial, "w:gz", compresslevel=6, dereference=True) as tar:
+        for p in files:
+            tar.add(p, p.relative_to(root).as_posix(), filter=_owned_by_root)
+    partial.replace(archive)  # a run building it at the same time builds the same
+    return archive
+
+
+def _owned_by_root(info: tarfile.TarInfo) -> tarfile.TarInfo:
+    info.uid = info.gid = 0
+    info.uname = info.gname = "root"
+    info.mode = 0o644
+    return info
+
+
 async def _prepare_workspace() -> None:
-    """Hide what the read-only tools hide, and make the codebase read-only for participants."""
+    """Unpack the codebase, hide what the read-only tools hide, and make it read-only for participants."""
     hidden = " ".join(
         f"-name {name!r} -o" for name in sorted(HIDDEN_NAMES)
     ).removesuffix(" -o")
+    # --touch: files get the time they were unpacked, as with Inspect's copy.
+    unpack = (
+        f"tar -xzf {WORKSPACE_ARCHIVE} -C {WORKSPACE} --touch && rm {WORKSPACE_ARCHIVE}"
+    )
+    hide = f"find {WORKSPACE} \\( {hidden} \\) -prune -exec rm -rf {{}} +"
     result = await sandbox().exec(
-        [
-            "sh",
-            "-c",
-            f"find {WORKSPACE} \\( {hidden} \\) -prune -exec rm -rf {{}} + ; chmod -R a+rX,a-w {WORKSPACE}",
-        ],
+        ["sh", "-c", f"{unpack} && {{ {hide} ; chmod -R a+rX,a-w {WORKSPACE}; }}"],
         user="root",
     )
     if not result.success:
