@@ -167,8 +167,9 @@ def _corrected(entry: dict, registry: dict) -> tuple[dict, str]:
     return entry, "asb_rubric"
 
 
-def log_paths(logs: str) -> list[Path]:
-    paths = [Path(p) for p in logs.split(",")]
+def log_paths(logs: str | list[str]) -> list[Path]:
+    # Inspect's CLI turns `-T logs=a,b` into a list, but `-T logs=a` into a string.
+    paths = [Path(p) for p in (logs.split(",") if isinstance(logs, str) else logs)]
     return sorted(q for p in paths for q in (p.glob("*.eval") if p.is_dir() else [p]))
 
 
@@ -220,7 +221,7 @@ def grader_prompt(mode: str, key: dict, sample: EvalSample) -> tuple[str, dict] 
     return prompt, {"rounds": [a["round"] for a in arguments], "sides": [a["side"] for a in arguments]}  # fmt: skip
 
 
-def sabotaged_samples(logs: str, mode: str) -> list[Sample]:
+def sabotaged_samples(logs: str | list[str], mode: str) -> list[Sample]:
     keys = answer_keys()
     samples = []
     for path in log_paths(logs):
@@ -293,7 +294,7 @@ def rubric_scorer(mode: str):
 
 @task
 def fixscore(
-    logs: str,
+    logs: str | list[str],
     mode: str = "judge",
     grader_model: str = "openai/gpt-6-luna",
     grader_provider: str = "openai/flex",

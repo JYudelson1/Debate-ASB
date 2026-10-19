@@ -3,7 +3,7 @@
 from conftest import needs_asb, say
 from test_protocols import model_calls, run
 
-from debate_asb.fixscore import answer_keys, fixscore
+from debate_asb.fixscore import answer_keys, fixscore, log_paths
 from debate_asb.protocols.lone_judge import lone_judge
 
 pytestmark = needs_asb
@@ -42,3 +42,12 @@ def test_grades_the_answer_with_fixes_not_a_credence_reask(script, tmp_path):
     }
     prompt = model_calls(sample, "grader")[0].input[0].text
     assert "Divide the last layer by h." in prompt and "h ** 0.5" in prompt
+
+
+def test_log_paths_take_a_list_or_a_comma_separated_string(tmp_path):
+    for name in ("a.eval", "b.eval"):
+        (tmp_path / name).write_text("")
+    a, b = str(tmp_path / "a.eval"), str(tmp_path / "b.eval")
+    expected = [tmp_path / "a.eval", tmp_path / "b.eval"]
+    assert log_paths(f"{a},{b}") == log_paths([a, b]) == expected
+    assert log_paths(str(tmp_path)) == expected
