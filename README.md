@@ -130,7 +130,8 @@ uv run inspect eval src/debate_asb/protocols/simple_debate.py --model none --log
 
 Each sample reuses what its first run saved; with `-T replay_epochs=cycle`,
 epoch e reuses what the log's epoch e saved (going round again past the log's
-last epoch), so a 3-epoch log's three debates are each judged. Tools are read-only and
+last epoch), so a 3-epoch log's three debates are each judged, and with
+`-T replay_epochs=<n>` every epoch reuses what epoch n saved. Tools are read-only and
 stateless, so a transcript plus the codebase is everything needed to replay.
 
 ### Adding a dataset

@@ -40,7 +40,7 @@ ARCHIVE_CACHE = Path(tempfile.gettempdir()) / "debate-asb-workspaces"
 COPY_LOCK = ARCHIVE_CACHE / "copy.lock"
 
 # Which of the replayed log's epochs each epoch reuses (see protocol_task).
-ReplayEpochs = Literal["first", "cycle"]
+ReplayEpochs = Literal["first", "cycle"] | int
 
 
 def protocol_task(
@@ -58,7 +58,8 @@ def protocol_task(
     saved by its epoch-1 run in that log, so `--epochs k` re-runs everything
     after those stages k times. With replay_epochs="cycle", epoch e reuses the
     log's epoch ((e - 1) mod n) + 1 instead, n being the number of epochs the
-    log ran: `--epochs 6` on a 3-epoch log goes through its epochs twice.
+    log ran: `--epochs 6` on a 3-epoch log goes through its epochs twice. With
+    an epoch number, every epoch reuses that epoch of the log.
 
     code_execution: run each sample in a Docker sandbox (docker/) holding a
     copy of its codebase, and give participants with codebase access the
@@ -104,9 +105,9 @@ def protocol_solver(protocol: Protocol):
             ),
         )
         if by_epoch := state.metadata.get("replayed_stages_by_epoch"):
-            source_epoch = (state.epoch - 1) % len(by_epoch) + 1
-            store().set("replayed_stages", by_epoch[source_epoch - 1])
-            store().set("replay_source_epoch", source_epoch)
+            reused = by_epoch[(state.epoch - 1) % len(by_epoch)]
+            store().set("replayed_stages", reused["stages"])
+            store().set("replay_source_epoch", reused["epoch"])
         else:
             store().set("replayed_stages", state.metadata.get("replayed_stages", {}))
         store().set("replay_source", state.metadata.get("replay_source"))
@@ -358,8 +359,10 @@ def _attach_replayed_stages(
         raise ValueError(
             "replay needs reuse=<stage name(s)> saying which stages to reuse"
         )
-    if epochs not in ("first", "cycle"):
-        raise ValueError(f"replay_epochs is 'first' or 'cycle', not {epochs!r}")
+    if not (epochs in ("first", "cycle") or isinstance(epochs, int) and epochs >= 1):
+        raise ValueError(
+            f"replay_epochs is 'first', 'cycle' or an epoch number, not {epochs!r}"
+        )
     saved: dict[str, dict[int, dict]] = {}
     for s in read_eval_log(log_path).samples or []:
         saved.setdefault(str(s.id), {})[s.epoch] = s.store.get("stages", {})
@@ -372,19 +375,28 @@ def _attach_replayed_stages(
             raise ValueError(
                 f"{sample.id} in {log_path} has epochs {sorted(runs)}, not 1 to {len(runs)}"
             )
+        source = (
+            sorted(runs) if epochs == "cycle" else [1 if epochs == "first" else epochs]
+        )
         replayed = []
-        for epoch in sorted(runs) if epochs == "cycle" else [1]:
+        for epoch in source:
+            if epoch not in runs:
+                raise ValueError(
+                    f"{log_path} has no epoch-{epoch} run of sample {sample.id}"
+                )
             missing = [name for name in reuse if name not in runs[epoch]]
             if missing:
                 raise ValueError(
                     f"{sample.id} in {log_path} (epoch {epoch}) has no saved stage(s) {missing}"
                 )
-            replayed.append({name: runs[epoch][name] for name in reuse})
-        # Every epoch's stages ride along; the solver picks the one its epoch reuses.
+            replayed.append(
+                {"epoch": epoch, "stages": {name: runs[epoch][name] for name in reuse}}
+            )
+        # Every source epoch's stages ride along; the solver picks the one its epoch reuses.
         stages = (
-            {"replayed_stages_by_epoch": replayed}
-            if epochs == "cycle"
-            else {"replayed_stages": replayed[0]}
+            {"replayed_stages": replayed[0]["stages"]}
+            if epochs == "first"
+            else {"replayed_stages_by_epoch": replayed}
         )
         attached.append(
             sample.model_copy(

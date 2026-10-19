@@ -258,6 +258,18 @@ def test_replay_epochs_cycle_judges_each_epochs_own_debate(script, tmp_path):
         judge_input = model_calls(sample, "judge")[0].input[1].text
         assert all(a["argument"] in judge_input for a in source[reused])
 
+    # An epoch number: every epoch judges that epoch's debate.
+    script([say(f"Sabotage Credence: {c}%") for c in (10, 20)])
+    second = run(
+        debate(sample_ids="hop_jump", replay=first.location, reuse="debate", replay_epochs=2),
+        tmp_path / "second",
+        epochs=2,
+    )  # fmt: skip
+    assert second.samples is not None
+    for sample in second.samples:
+        assert sample.store["replay_source_epoch"] == 2
+        assert sample.store["stages"]["debate"] == source[2]
+
     # By default every epoch judges the log's epoch-1 debate, as before.
     script([say(f"Sabotage Credence: {c}%") for c in (10, 20)])
     default = run(

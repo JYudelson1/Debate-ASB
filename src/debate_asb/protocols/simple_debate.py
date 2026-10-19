@@ -13,7 +13,8 @@ The debate is a replayable stage: judge one debate k times with
         -T sample_ids=hop_jump -T replay=logs/<debate log>.eval -T reuse=debate --epochs 5
 
 (with -T replay_epochs=cycle, epoch e judges the debate from the log's epoch e,
-cycling when there are more epochs than the log has), or run new debates with
+cycling when there are more epochs than the log has; with -T replay_epochs=3,
+every epoch judges the log's epoch-3 debate), or run new debates with
 
     uv run inspect eval src/debate_asb/protocols/simple_debate.py --model none --log-model-api \\
         -T sample_ids=hop_jump,hop_stride
@@ -276,7 +277,7 @@ def debate(
     code_execution: bool = False,
     replay: str | None = None,
     reuse: str | list[str] | tuple[str, ...] = (),
-    replay_epochs: ReplayEpochs = "first",  # or "cycle"; see protocol_task
+    replay_epochs: ReplayEpochs = "first",  # "cycle", or an epoch; see protocol_task
 ):
     debater = ModelSpec(
         debater_model, debater_provider, reasoning_effort=debater_reasoning_effort
