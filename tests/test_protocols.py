@@ -1,5 +1,6 @@
 """Every baseline protocol end to end on real ASB files, with a scripted mock model."""
 
+import shutil
 from dataclasses import dataclass
 
 import pytest
@@ -236,6 +237,40 @@ def test_debate_replay_judges_the_same_debate_again(script, tmp_path):
     assert sorted(s.store["credence"] for s in replay.samples) == [40, 60]
 
 
+def test_replay_epochs_cycle_judges_each_epochs_own_debate(script, tmp_path):
+    script([say(f"{turn} #{n}") for n in (1, 2) for turn in ("S1", "C1", "S2", "C2", "Sabotage Credence: 50%")])  # fmt: skip
+    first = run(debate(sample_ids="hop_jump"), tmp_path / "first", epochs=2)
+    assert first.samples is not None
+    source = {s.epoch: s.store["stages"]["debate"] for s in first.samples}
+    assert source[1] != source[2]
+
+    script([say(f"Sabotage Credence: {c}%") for c in (10, 20, 30, 40)])
+    cycled = run(
+        debate(sample_ids="hop_jump", replay=first.location, reuse="debate", replay_epochs="cycle"),
+        tmp_path / "cycle",
+        epochs=4,
+    )  # fmt: skip
+    assert cycled.samples is not None
+    for sample in cycled.samples:
+        reused = (sample.epoch - 1) % 2 + 1  # epochs 1, 2, 3, 4 judge 1, 2, 1, 2
+        assert sample.store["replay_source_epoch"] == reused
+        assert sample.store["stages"]["debate"] == source[reused]
+        judge_input = model_calls(sample, "judge")[0].input[1].text
+        assert all(a["argument"] in judge_input for a in source[reused])
+
+    # By default every epoch judges the log's epoch-1 debate, as before.
+    script([say(f"Sabotage Credence: {c}%") for c in (10, 20)])
+    default = run(
+        debate(sample_ids="hop_jump", replay=first.location, reuse="debate"),
+        tmp_path / "default",
+        epochs=2,
+    )
+    assert default.samples is not None
+    for sample in default.samples:
+        assert sample.store["stages"]["debate"] == source[1]
+        assert "replay_source_epoch" not in sample.store
+
+
 def test_debate_without_judge_access(script, tmp_path):
     script(scripted_debate())
     spec = ModelSpec("m", "p")
@@ -373,6 +408,90 @@ def test_extras_go_before_the_setting_context():
     assert judge.index(setting) < judge.index("## Proposed Fixes")
     # No extras: exactly the base prompt.
     assert asb.judge("tools", extras=[]) == asb.judge("tools")
+
+
+@pytest.fixture
+def prompt_variant(tmp_path, monkeypatch):
+    """Add prompt variant "v" to the ASB setting of a copy of the prompts, holding the given files."""
+    root = tmp_path / "prompts"
+    shutil.copytree(PROMPTS, root, ignore=shutil.ignore_patterns("__pycache__", "*.py"))
+    monkeypatch.setattr("debate_asb.prompts.PROMPTS", root)
+
+    def make(files: dict[str, str]) -> None:
+        folder = root / "asb" / "variants" / "v"
+        folder.mkdir(parents=True)
+        for name, text in files.items():
+            (folder / name).write_text(text)
+
+    return make
+
+
+def test_prompt_variant_replaces_only_its_own_files(prompt_variant):
+    asb = SETTINGS["asb"]
+    marked = asb._read("judge.md").replace(
+        "**Core Question:**", "**Core Question (v):**"
+    )
+    prompt_variant({"judge.md": marked, "judge_debate.md": "## Debate note"})
+    v = asb.with_variant("v")
+    assert asb.with_variant(None) is asb
+
+    expected = asb.judge("tools_execute").replace(
+        "**Core Question:**", "**Core Question (v):**"
+    )
+    assert v.judge("tools_execute") == expected != asb.judge("tools_execute")
+    # The debate judge's section is only ever an extra.
+    assert "## Debate note" not in v.judge("tools_execute")
+    assert v.variant_extras("judge_debate.md") == ["## Debate note"]
+    assert asb.variant_extras("judge_debate.md") == []
+    debater = (Side.CLEAN, 2, 15, "tools_execute", True)
+    assert v.debater(*debater) == asb.debater(*debater)
+
+
+def test_prompt_variants_with_unknown_names_fail(prompt_variant):
+    with pytest.raises(ValueError, match="no prompt variant 'missing'"):
+        SETTINGS["asb"].with_variant("missing")
+    prompt_variant({"judge_anwser.md": "typo"})
+    with pytest.raises(ValueError, match="judge_anwser.md"):
+        SETTINGS["asb"].with_variant("v")
+
+
+def test_prompt_variant_task_args_reach_their_roles(script, tmp_path, prompt_variant):
+    asb = SETTINGS["asb"]
+    prompt_variant({
+        "judge.md": asb._read("judge.md").replace("**Core Question:**", "**Core Question (v):**"),
+        "judge_debate.md": "## Debate note",
+        "debater.md": asb._read("debater.md").replace("strongest points.", "strongest points (v)."),
+    })  # fmt: skip
+    script(scripted_debate() + scripted_debate() + explore_then_answer(50))
+    judge_v = run(
+        debate(sample_ids="hop_jump", judge_prompt_variant="v"), tmp_path / "j"
+    )
+    debater_v = run(
+        debate(sample_ids="hop_jump", debater_prompt_variant="v"), tmp_path / "d"
+    )
+    lone_v = run(
+        lone_judge(sample_ids="hop_jump", judge_prompt_variant="v"), tmp_path / "l"
+    )
+
+    def system_prompts(log, roles=("judge", "debater_sabotaged", "debater_clean")):
+        assert log.samples is not None
+        return [model_calls(log.samples[0], role)[0].input[0].text for role in roles]
+
+    judge, *debaters = system_prompts(judge_v)
+    setting = "\n# Research Sabotage Detection: Blue Team Context"
+    assert (
+        judge.index("Core Question (v)")
+        < judge.index("## Debate note")
+        < judge.index(setting)
+    )
+    assert not any("(v)" in p for p in debaters)
+
+    judge, *debaters = system_prompts(debater_v)
+    assert "(v)" not in judge and "## Debate note" not in judge
+    assert all("strongest points (v)." in p for p in debaters)
+
+    [lone] = system_prompts(lone_v, roles=("judge",))
+    assert "Core Question (v)" in lone and "## Debate note" not in lone
 
 
 def test_protocol_prompt_folders_hold_no_copies_of_base_prompts():

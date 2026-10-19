@@ -20,6 +20,16 @@ above its last `---` line (so before the game rules), e.g.
 
     judge = asb/judge.md + asb/t_vs_u/judge_debate.md + asb/game_rules.md + asb/judge_answer.md
 
+Prompt variants (`asb/variants/<name>/`) are an experiment's edited prompts.
+Each file in a variant replaces the base file of the same name for the role
+whose task arg names the variant: `judge_prompt_variant` for the judge
+(`simple_debate.py`, `lone_judge.py`), `debater_prompt_variant` for both
+debaters. A variant may also have `judge_debate.md`, a section only the debate
+judge gets (as an extra), so the lone judge with the same variant is that judge
+without the debate. With no variant, every prompt is the base one, byte for
+byte. A variant name with no folder, or a file in it that replaces no base
+file, is an error. Each variant is listed under "Prompt variants" at the end.
+
 # ASB (`asb/`)
 
 ## Judge: `judge.md` + one `access_*.md` + `judge_answer.md`
@@ -227,3 +237,9 @@ Debater: the base debater prompt plus one `extra_context_*.md` and one
 - `untrusted_assigned_sabotaged.md`: the same, plus that the debater has to
   sandbag: make arguments weak enough to be refuted, without steering the
   debate toward the actual sabotage.
+
+# Prompt variants (`asb/variants/`)
+
+NEW (ours), for E05 (hill-climbing vanilla debate): each variant changes one
+thing from the base prompts, motivated by a pattern in E04's transcripts, and
+says only true things about the setting. Entries give what changed and why.

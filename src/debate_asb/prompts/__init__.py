@@ -11,10 +11,13 @@ there. Provenance of every file is in README.md.
 A protocol with prompts of its own doesn't copy these: it passes its extra
 sections (from a subfolder such as asb/t_vs_u/) as `extras`, and they go
 just above the base prompt's last "---" line, before the setting context.
+
+A prompt variant (`PromptSet.with_variant`) is an experiment's edited prompts:
+the files in <setting>/variants/<name>/ replace the base files of the same name.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -26,12 +29,44 @@ PROMPTS = Path(__file__).parent
 # "tools_execute" = read-only tools plus run_bash (code execution).
 Access = Literal["tools", "tools_execute", "full_context", "none"]
 
+# Files a variant may have that no base prompt has. judge_debate.md: a section
+# for the debate judge only (the lone judge with the same variant goes without).
+VARIANT_ONLY = {"judge_debate.md"}
+
 
 @dataclass(frozen=True)
 class PromptSet:
     folder: str
     subject: str  # what's being audited, e.g. "paper and codebase"
     claims: dict[Side, str]  # what each side argues
+    variant: str | None = None  # see with_variant()
+
+    def with_variant(self, variant: str | None) -> "PromptSet":
+        """These prompts with variant's files in place of the base files they name (None: the base prompts)."""
+        if variant is None:
+            return self
+        folder = PROMPTS / self.folder / "variants" / variant
+        if not folder.is_dir():
+            raise ValueError(
+                f"There is no prompt variant {variant!r}: {folder} is missing"
+            )
+        # A misnamed file would leave the base file in its place without a word.
+        unknown = sorted(
+            f.name
+            for f in folder.iterdir()
+            if f.name not in VARIANT_ONLY
+            and not (PROMPTS / self.folder / f.name).is_file()
+        )
+        if unknown:
+            raise ValueError(
+                f"Prompt variant {variant!r} has files that replace no base file: {unknown}"
+            )
+        return replace(self, variant=variant)
+
+    def variant_extras(self, name: str) -> list[str]:
+        """The variant's own section `name` (one of VARIANT_ONLY) as extras; [] if it has none."""
+        path = self._variant_file(name)
+        return [path.read_text()] if path else []
 
     def judge(
         self,
@@ -128,7 +163,13 @@ class PromptSet:
         )
 
     def _read(self, name: str) -> str:
-        return (PROMPTS / self.folder / name).read_text()
+        return (self._variant_file(name) or PROMPTS / self.folder / name).read_text()
+
+    def _variant_file(self, name: str) -> Path | None:
+        if self.variant is None:
+            return None
+        path = PROMPTS / self.folder / "variants" / self.variant / name
+        return path if path.is_file() else None
 
 
 SETTINGS: dict[str, PromptSet] = {

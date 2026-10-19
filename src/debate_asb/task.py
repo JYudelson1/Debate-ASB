@@ -13,6 +13,7 @@ import tarfile
 import tempfile
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Literal
 
 import anyio
 from inspect_ai import Task
@@ -38,6 +39,9 @@ WORKSPACE_ARCHIVE = "/tmp/workspace.tar.gz"
 ARCHIVE_CACHE = Path(tempfile.gettempdir()) / "debate-asb-workspaces"
 COPY_LOCK = ARCHIVE_CACHE / "copy.lock"
 
+# Which of the replayed log's epochs each epoch reuses (see protocol_task).
+ReplayEpochs = Literal["first", "cycle"]
+
 
 def protocol_task(
     protocol: Protocol,
@@ -45,13 +49,16 @@ def protocol_task(
     replay: str | None = None,
     reuse: str | list[str] | tuple[str, ...] = (),
     code_execution: bool = False,
+    replay_epochs: ReplayEpochs = "first",
 ) -> Task:
     """An Inspect Task running `protocol` on `samples`.
 
     replay/reuse: path to an earlier log of the same protocol, and the names of
     stages to reuse from it (see protocol.stage). Each sample reuses the stages
     saved by its epoch-1 run in that log, so `--epochs k` re-runs everything
-    after those stages k times.
+    after those stages k times. With replay_epochs="cycle", epoch e reuses the
+    log's epoch ((e - 1) mod n) + 1 instead, n being the number of epochs the
+    log ran: `--epochs 6` on a 3-epoch log goes through its epochs twice.
 
     code_execution: run each sample in a Docker sandbox (docker/) holding a
     copy of its codebase, and give participants with codebase access the
@@ -59,7 +66,9 @@ def protocol_task(
     """
     check_openrouter_account()
     if replay:
-        samples = _attach_replayed_stages(samples, replay, as_list(reuse))
+        samples = _attach_replayed_stages(
+            samples, replay, as_list(reuse), replay_epochs
+        )
     if code_execution:
         samples = [_with_code_execution(s) for s in samples]
     return Task(
@@ -94,7 +103,12 @@ def protocol_solver(protocol: Protocol):
                 else None
             ),
         )
-        store().set("replayed_stages", state.metadata.get("replayed_stages", {}))
+        if by_epoch := state.metadata.get("replayed_stages_by_epoch"):
+            source_epoch = (state.epoch - 1) % len(by_epoch) + 1
+            store().set("replayed_stages", by_epoch[source_epoch - 1])
+            store().set("replay_source_epoch", source_epoch)
+        else:
+            store().set("replayed_stages", state.metadata.get("replayed_stages", {}))
         store().set("replay_source", state.metadata.get("replay_source"))
         # Scopes the model cache to this sample (see ModelSpec.cache_policy).
         store().set("sample_id", str(state.sample_id))
@@ -335,34 +349,49 @@ def _unlock(fd: int) -> None:
 
 
 def _attach_replayed_stages(
-    samples: list[Sample], log_path: str, reuse: list[str]
+    samples: list[Sample],
+    log_path: str,
+    reuse: list[str],
+    epochs: ReplayEpochs = "first",
 ) -> list[Sample]:
     if not reuse:
         raise ValueError(
             "replay needs reuse=<stage name(s)> saying which stages to reuse"
         )
-    saved = {
-        str(s.id): s.store.get("stages", {})
-        for s in read_eval_log(log_path).samples or []
-        if s.epoch == 1
-    }
+    if epochs not in ("first", "cycle"):
+        raise ValueError(f"replay_epochs is 'first' or 'cycle', not {epochs!r}")
+    saved: dict[str, dict[int, dict]] = {}
+    for s in read_eval_log(log_path).samples or []:
+        saved.setdefault(str(s.id), {})[s.epoch] = s.store.get("stages", {})
     attached = []
     for sample in samples:
-        stages = saved.get(str(sample.id))
-        if stages is None:
+        runs = saved.get(str(sample.id), {})
+        if 1 not in runs:
             raise ValueError(f"{log_path} has no run of sample {sample.id}")
-        missing = [name for name in reuse if name not in stages]
-        if missing:
+        if epochs == "cycle" and sorted(runs) != list(range(1, len(runs) + 1)):
             raise ValueError(
-                f"{sample.id} in {log_path} has no saved stage(s) {missing}"
+                f"{sample.id} in {log_path} has epochs {sorted(runs)}, not 1 to {len(runs)}"
             )
-        replayed = {name: stages[name] for name in reuse}
+        replayed = []
+        for epoch in sorted(runs) if epochs == "cycle" else [1]:
+            missing = [name for name in reuse if name not in runs[epoch]]
+            if missing:
+                raise ValueError(
+                    f"{sample.id} in {log_path} (epoch {epoch}) has no saved stage(s) {missing}"
+                )
+            replayed.append({name: runs[epoch][name] for name in reuse})
+        # Every epoch's stages ride along; the solver picks the one its epoch reuses.
+        stages = (
+            {"replayed_stages_by_epoch": replayed}
+            if epochs == "cycle"
+            else {"replayed_stages": replayed[0]}
+        )
         attached.append(
             sample.model_copy(
                 update={
                     "metadata": {
                         **(sample.metadata or {}),
-                        "replayed_stages": replayed,
+                        **stages,
                         "replay_source": log_path,
                     }
                 }
