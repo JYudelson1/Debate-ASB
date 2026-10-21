@@ -84,9 +84,10 @@ class EvidenceExcerpt:
     """One verbatim, line-addressed excerpt from a research artifact."""
 
     path: str
-    start_line: int
-    end_line: int
+    start_line: int | None
+    end_line: int | None
     text: str
+    source_location: str | None = None
 
     def __post_init__(self) -> None:
         path = PurePosixPath(self.path)
@@ -99,7 +100,14 @@ class EvidenceExcerpt:
             raise ValueError(
                 f"evidence path must be relative and contained: {self.path!r}"
             )
-        if self.start_line < 1 or self.end_line < self.start_line:
+        if any(
+            n is not None and (type(n) is not int or n < 1)
+            for n in (self.start_line, self.end_line)
+        ) or (
+            self.start_line is not None
+            and self.end_line is not None
+            and (self.start_line < 1 or self.end_line < self.start_line)
+        ):
             raise ValueError(
                 f"invalid line range {self.start_line}-{self.end_line} for {self.path}"
             )
@@ -131,6 +139,7 @@ class ExtractionResult:
     metadata: StageMetadata
     bundles: tuple[EvidenceBundle, ...]
     raw_output: str
+    investigation: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         bundle_count = _extraction_bundle_count(self.metadata)
@@ -142,8 +151,14 @@ class ExtractionResult:
             )
         if not self.raw_output:
             raise ValueError("raw extractor output must be retained")
-        if parse_extraction_output(self.raw_output, bundle_count) != self.bundles:
+        parsed = (
+            parse_extraction_output(self.raw_output, bundle_count)
+            if bundle_count
+            else ()
+        )
+        if parsed != self.bundles:
             raise ValueError("structured bundles do not match the raw extractor output")
+        _ensure_json(self.investigation, "investigation")
 
     @classmethod
     def from_raw(cls, metadata: StageMetadata, raw_output: str) -> "ExtractionResult":
@@ -157,7 +172,13 @@ class ExtractionResult:
 
 def _extraction_bundle_count(metadata: StageMetadata) -> int:
     count = metadata.config.get("bundle_count", EXPECTED_BUNDLE_COUNT)
-    if type(count) is not int or count < 1:
+    minimum = (
+        0
+        if metadata.config.get("variant") == "bounded_validity_questions"
+        or metadata.config.get("allow_empty_extraction") is True
+        else 1
+    )
+    if type(count) is not int or count < minimum:
         raise ValueError("bundle_count must be a positive integer")
     return count
 
@@ -252,17 +273,21 @@ class AggregationResult:
     credence: float | None
     winning_bundle_numbers: tuple[int, ...]
     missing_bundle_numbers: tuple[int, ...]
+    empty_extraction_score: float | None = None
 
     def __post_init__(self) -> None:
         if self.method != "max_bundle_credence":
             raise ValueError(f"unknown aggregation method: {self.method!r}")
-        if not self.bundle_credences:
+        if not self.bundle_credences and self.empty_extraction_score is None:
             raise ValueError("aggregation requires at least one bundle credence")
+        _validate_credence(self.empty_extraction_score)
+        if self.bundle_credences and self.empty_extraction_score is not None:
+            raise ValueError("empty extraction score requires zero bundles")
         for bundle_credence in self.bundle_credences:
             _validate_credence(bundle_credence)
 
         scored = [value for value in self.bundle_credences if value is not None]
-        expected_credence = max(scored) if scored else None
+        expected_credence = max(scored) if scored else self.empty_extraction_score
         if self.credence != expected_credence:
             raise ValueError(
                 "aggregate credence must equal the maximum bundle credence"
@@ -301,7 +326,13 @@ def aggregate_max_credence(evaluation: EvaluationResult) -> AggregationResult:
         by_number[bundle.number] for bundle in evaluation.extraction.bundles
     )
     scored = [value for value in bundle_credences if value is not None]
-    credence = max(scored) if scored else None
+    empty_score: float | None = None
+    if not bundle_credences:
+        configured = evaluation.extraction.metadata.config.get("zero_candidate_score")
+        if type(configured) not in (int, float):
+            raise ValueError("zero bundles require an explicit numeric scoring policy")
+        empty_score = cast(float, configured)
+    credence = max(scored) if scored else empty_score
     winners = tuple(
         number
         for number, value in enumerate(bundle_credences, start=1)
@@ -318,6 +349,7 @@ def aggregate_max_credence(evaluation: EvaluationResult) -> AggregationResult:
         credence=credence,
         winning_bundle_numbers=winners,
         missing_bundle_numbers=missing,
+        empty_extraction_score=empty_score,
     )
 
 
@@ -364,7 +396,8 @@ def parse_evidence_bundles(
     """
     if expected_count < 1:
         raise ValueError("expected_count must be positive")
-    lines = text.splitlines()
+    raw_lines = text.splitlines(keepends=True)
+    lines = [line.rstrip("\r\n") for line in raw_lines]
     index = 0
     bundles: list[EvidenceBundle] = []
 
@@ -430,7 +463,12 @@ def parse_evidence_bundles(
             line_matches = [
                 _LINE_RANGE.fullmatch(part.strip()) for part in line_spec.split(",")
             ]
-            if not line_matches or any(match is None for match in line_matches):
+            partial = re.fullmatch(r"(\d+|unavailable)-(\d+|unavailable)", line_spec)
+            if (
+                line_spec != "unavailable"
+                and not partial
+                and (not line_matches or any(match is None for match in line_matches))
+            ):
                 raise fail("line range must be N or START-END")
             ranges = [
                 (int(match.group(1)), int(match.group(2) or match.group(1)))
@@ -442,9 +480,21 @@ def parse_evidence_bundles(
             # These are citation hints, not a claim that the quote is contiguous.
             # Keep the raw specification in raw_output and use its envelope;
             # post-hoc fidelity checks still verify the literal quoted text.
-            start_line = min(start for start, _ in ranges)
-            end_line = max(end for _, end in ranges)
+            start_line = min((start for start, _ in ranges), default=None)
+            end_line = max((end for _, end in ranges), default=None)
+            if partial:
+                start_line, end_line = (
+                    int(n) if n != "unavailable" else None for n in partial.groups()
+                )
             index += 1
+            source_location = None
+            if index < len(lines) and lines[index].startswith("source_location: "):
+                source_location = json.loads(
+                    lines[index].removeprefix("source_location: ")
+                )
+                if not isinstance(source_location, str):
+                    raise fail("source_location must be a JSON string")
+                index += 1
 
             if index >= len(lines) or not (
                 fence_match := _OPEN_FENCE.fullmatch(lines[index])
@@ -470,17 +520,25 @@ def parse_evidence_bundles(
                         break
                     nested_fence = fence
                 elif inner := _OPEN_FENCE.fullmatch(lines[index]):
-                    nested_fence = inner.group("fence")
+                    if len(inner.group("fence")) >= len(fence):
+                        nested_fence = inner.group("fence")
                 index += 1
             if index >= len(lines) and not implicit_close:
                 raise fail(f"unclosed {fence} excerpt fence")
-            excerpt_text = "\n".join(lines[excerpt_start:index])
+            # Remove only the fence separator; retain the excerpt's own newlines.
+            excerpt_text = "".join(raw_lines[excerpt_start:index])
+            if excerpt_text.endswith("\r\n"):
+                excerpt_text = excerpt_text[:-2]
+            elif excerpt_text.endswith(("\r", "\n")):
+                excerpt_text = excerpt_text[:-1]
             if not implicit_close:
                 index += 1
 
             try:
                 excerpts.append(
-                    EvidenceExcerpt(path, start_line, end_line, excerpt_text)
+                    EvidenceExcerpt(
+                        path, start_line, end_line, excerpt_text, source_location
+                    )
                 )
             except ValueError as error:
                 raise fail(str(error)) from error
@@ -513,7 +571,15 @@ def render_evidence_bundles(bundles: tuple[EvidenceBundle, ...]) -> str:
                     [
                         "## Excerpt",
                         f"path: {excerpt.path}",
-                        f"lines: {excerpt.start_line}-{excerpt.end_line}",
+                        f"lines: {excerpt.start_line if excerpt.start_line is not None else 'unavailable'}-{excerpt.end_line if excerpt.end_line is not None else 'unavailable'}"
+                        if excerpt.start_line is not None
+                        or excerpt.end_line is not None
+                        else "lines: unavailable",
+                        *(
+                            [f"source_location: {json.dumps(excerpt.source_location)}"]
+                            if excerpt.source_location is not None
+                            else []
+                        ),
                         f"{fence}text",
                         excerpt.text,
                         fence,
@@ -530,7 +596,11 @@ type SavedResult = (
 
 def result_to_dict(result: SavedResult) -> dict[str, JsonValue]:
     """Convert a validated result to the JSON-able form used by replay stages."""
-    return cast(dict[str, JsonValue], asdict(result))
+    value = asdict(result)
+    # Preserve the base protocol's persisted aggregation shape.
+    if isinstance(result, AggregationResult) and result.empty_extraction_score is None:
+        value.pop("empty_extraction_score")
+    return cast(dict[str, JsonValue], value)
 
 
 def extraction_result_from_dict(value: Any) -> ExtractionResult:
@@ -663,7 +733,12 @@ def _metadata_from_dict(value: Any) -> StageMetadata:
 
 def _excerpt_from_dict(value: Any) -> EvidenceExcerpt:
     data = _mapping(value, "evidence excerpt")
-    _keys(data, {"path", "start_line", "end_line", "text"}, "evidence excerpt")
+    data = {"source_location": None, **data}
+    _keys(
+        data,
+        {"path", "start_line", "end_line", "text", "source_location"},
+        "evidence excerpt",
+    )
     return EvidenceExcerpt(**data)
 
 
@@ -675,11 +750,17 @@ def _bundle_from_dict(value: Any) -> EvidenceBundle:
 
 
 def _extraction_from_dict(data: dict[str, Any]) -> ExtractionResult:
-    _keys(data, {"metadata", "bundles", "raw_output"}, "extraction result")
+    data = {"investigation": {}, **data}
+    _keys(
+        data,
+        {"metadata", "bundles", "raw_output", "investigation"},
+        "extraction result",
+    )
     return ExtractionResult(
         metadata=_metadata_from_dict(data["metadata"]),
         bundles=tuple(_bundle_from_dict(item) for item in data["bundles"]),
         raw_output=data["raw_output"],
+        investigation=data["investigation"],
     )
 
 
@@ -717,6 +798,7 @@ def _evaluation_from_dict(data: dict[str, Any]) -> EvaluationResult:
 
 
 def _aggregation_from_dict(data: dict[str, Any]) -> AggregationResult:
+    data = {"empty_extraction_score": None, **data}
     _keys(
         data,
         {
@@ -725,6 +807,7 @@ def _aggregation_from_dict(data: dict[str, Any]) -> AggregationResult:
             "credence",
             "winning_bundle_numbers",
             "missing_bundle_numbers",
+            "empty_extraction_score",
         },
         "aggregation result",
     )

@@ -1,5 +1,5 @@
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import pytest
 
@@ -106,6 +106,16 @@ def test_four_backtick_fence_can_contain_triple_backticks():
     bundles = parse_evidence_bundles(raw)
 
     assert bundles[0].excerpts[0].text == "```python\nx = 1\n```"
+
+
+@pytest.mark.parametrize(
+    "excerpt", ["paragraph\n```", "```python\nx = 1", "text\n````\nfragment"]
+)
+def test_rendered_fence_preserves_unmatched_shorter_fences_in_source_fragments(excerpt):
+    bundle = EvidenceBundle(
+        1, "A source fragment.", (EvidenceExcerpt("PAPER.md", None, None, excerpt),)
+    )
+    assert parse_evidence_bundles(render_evidence_bundles((bundle,)), 1) == (bundle,)
 
 
 def test_language_specific_excerpt_fence_is_accepted():
@@ -392,3 +402,14 @@ def test_loader_rejects_unknown_schema_and_fields(tmp_path):
     path.write_text(json.dumps(document))
     with pytest.raises(ValueError, match="extraction result fields"):
         load_result(path)
+
+
+def test_explicit_empty_extraction_contract_preserves_raw_output():
+    raw = "Shortfall: 0 of 10 qualifying bundles found within the available inspection budget."
+    stage = metadata(bundle_count=0)
+    with pytest.raises(ValueError, match="bundle_count"):
+        ExtractionResult(stage, (), raw)
+    stage = replace(stage, config={**stage.config, "allow_empty_extraction": True})
+    result = ExtractionResult(stage, (), raw)
+    assert extraction_result_from_dict(result_to_dict(result)) == result
+    assert result.raw_output == raw
