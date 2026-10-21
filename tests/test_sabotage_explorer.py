@@ -2,7 +2,7 @@ import json
 import re
 
 from debate_asb.sabotage import read_registry
-from debate_asb.sabotage_explorer import comparison_hunks, write_explorer
+from debate_asb.sabotage_explorer import comparison_hunks, render_paper, write_explorer
 
 
 def test_source_comparison_shows_actual_changed_readout_and_local_context():
@@ -44,3 +44,22 @@ def test_explorer_is_portable_and_preserves_uncertainty(tmp_path):
     assert "Open analysis" not in html
     assert all("analyses" not in sample for sample in data["samples"])
     assert "/Users/" not in html
+    assert "<table>" in samples["hop_double"]["paper"]["html"]
+    assert "data:image/png;base64," in samples["hop_double"]["paper"]["html"]
+
+
+def test_paper_rendering_formats_content_without_loading_untrusted_resources(tmp_path):
+    workspace = tmp_path / "codebase"
+    workspace.mkdir()
+    (tmp_path / "outside.png").write_bytes(b"private")
+    source = (
+        "# Paper\n\n**Specification**\n\n"
+        "<script>alert(1)</script>\n\n"
+        "![Outside](../outside.png)\n\n![Remote](https://example.com/figure.png)"
+    )
+    html = render_paper(source, workspace / "PAPER.md")
+    assert "<h1>Paper</h1>" in html
+    assert "<strong>Specification</strong>" in html
+    assert "<script>" not in html and "&lt;script&gt;" in html
+    assert "<img" not in html and "base64," not in html
+    assert "[Figure: Outside]" in html and "[Figure: Remote]" in html
