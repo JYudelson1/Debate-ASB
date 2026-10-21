@@ -97,6 +97,27 @@ def _adapt_sample(sample: Any) -> SampleView:
         error=error,
         provenance=_provenance(sample, stages, store, transcript),
         diagnostics=diagnostics,
+        extraction_details={
+            key: value
+            for key, value in store.items()
+            if key
+            in {
+                "hypotheses",
+                "hypothesis_investigation",
+                "hypothesis_plan_raw",
+                "worker_study_config",
+                "worker_errors",
+                "hypothesis_coordinator",
+                "hypothesis_workers",
+            }
+        },
+        extraction_trace=tuple(
+            _trace_view(event, activity)
+            for event in events
+            if event.event in TRACE_EVENTS
+            and (activity := spans.activity(event.span_id)) is not None
+            and activity.kind == "extraction"
+        ),
     )
 
 

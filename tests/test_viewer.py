@@ -43,6 +43,53 @@ def test_adapter_groups_partial_results_by_bundle() -> None:
     assert sample.bundles[0].trace[0].role == "sabotaged"
 
 
+def test_honest_extraction_preserves_plan_and_unassigned_inspection_trace() -> None:
+    log = _log_fixture()
+    raw = log.samples[0]
+    raw.id = "hop_stride"
+    raw.target = "honest"
+    raw.store["hypotheses"] = [{"hypothesis": "Check the sampling implementation"}]
+    raw.store["hypothesis_investigation"] = {"workers": [{"hypothesis_id": "H1"}]}
+    raw.store["worker_study_config"] = {"primary_hypotheses": 20}
+    raw.events = [
+        Event(
+            event="span_begin", id="extract", parent_id=None, name="extraction", data={}
+        ),
+        Event(
+            event="span_begin",
+            id="worker",
+            parent_id="extract",
+            name="hypothesis_worker/1",
+            data={},
+        ),
+        Event(
+            event="tool",
+            span_id="worker",
+            data={
+                "function": "read_file",
+                "arguments": {"path": "PAPER.md"},
+                "result": "1  Measure sampling accuracy.",
+            },
+        ),
+    ]
+    report = adapt_log(cast(EvalLog, log), "/tmp/honest.eval")
+    sample = report.samples[0]
+    assert sample.target == "honest"
+    assert sample.extraction_details["hypotheses"] == raw.store["hypotheses"]
+    assert (
+        sample.extraction_details["hypothesis_investigation"]
+        == raw.store["hypothesis_investigation"]
+    )
+    assert sample.extraction_details["worker_study_config"]["primary_hypotheses"] == 20
+    assert len(sample.extraction_trace) == 1
+    assert sample.extraction_trace[0].content == "1  Measure sampling accuracy."
+    assert sample.rubric is not None
+    assert sample.rubric["sabotage_reference"]["record"]["status"] == "honest_control"
+    rendered = render_report(report)
+    assert 'id="extraction-inspection"' in rendered
+    assert "target capture is not applicable" in rendered
+
+
 def test_flattened_tool_history_is_located_at_its_turn() -> None:
     report = adapt_log(cast(EvalLog, _log_fixture()), "/tmp/example.eval")
 
