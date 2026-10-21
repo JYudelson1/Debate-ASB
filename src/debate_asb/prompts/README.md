@@ -174,6 +174,14 @@ here), and "Running Code". Edits:
 `access_tools_execute_turn.md` (debaters, consultant) is NEW (ours): the same
 facts, condensed.
 
+# Bounded validity question extraction (`asb/hypothesis_workers/`)
+
+The `asb/hypothesis_workers/coordinator.md` and `worker.md` templates are the
+user-supplied bounded validity question prompts, copied without wording changes.
+They are rendered once with Python `str.format`; their JSON outputs are adapted
+by `protocols/hypothesis_workers.py`. Both receive the existing ASB Blue Team
+Context. See `docs/hypothesis-workers.md` for routing and budget semantics.
+
 # MonitoringBench (`monitoringbench/`)
 
 All NEW (ours), deliberately not MonitoringBench's own monitor prompt, since
@@ -217,3 +225,12 @@ Debater: the base debater prompt plus one `extra_context_*.md` and one
 - `untrusted_assigned_sabotaged.md`: the same, plus that the debater has to
   sandbag: make arguments weak enough to be refuted, without steering the
   debate toward the actual sabotage.
+
+## Experimental validity draft (16 October 2026)
+
+`asb/extract_and_evaluate/extract_potential_validity_threats.md` preserves the user-supplied draft verbatim from `extract_potential_validity_threats.md`. It requests up to `{n_bundles}` qualifying bundles, permits an explicit shortfall, and does not replace the base extraction prompt.
+
+The fixed-count `extract_experimental_validity.md` and shortfall-capable
+`extract_any_validity_criterion.md` preserve their respective saved run templates
+verbatim. Select these through `extraction_prompt`; select the shortfall contract
+explicitly through `output_policy`. See [rerun instructions](../../../docs/extraction-protocols.md).

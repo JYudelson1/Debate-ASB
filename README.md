@@ -55,6 +55,9 @@ uv run python -m debate_asb.viewer logs/<file>.eval   # bundle-first standalone 
   de-duplicated, so a lone-judge sample is ~200 KB of log.
 - `--epochs n` runs every sample n times. The runner reports each run separately.
 
+Prompt selection and rerun contracts are documented in
+[extraction-protocols.md](docs/extraction-protocols.md).
+
 Protocols shipped:
 
 | Protocol | File | What happens |
@@ -63,7 +66,8 @@ Protocols shipped:
 | Full-context judge | `protocols/full_context_judge.py` | Whole codebase in one prompt, no tools, one answer. |
 | Debate | `protocols/simple_debate.py` | Two debaters on opposite sides take turns (investigating privately); a judge decides. |
 | Consultancy | `protocols/consultancy.py` | One consultant argues a (by default random) side; a judge questions it, then decides. |
-| Extract-and-evaluate | `protocols/extract_and_evaluate.py` | Extract ten evidence bundles, debate and judge each independently, then take the maximum bundle credence. |
+| Extract-and-evaluate | `protocols/extract_and_evaluate.py` | Extract six evidence bundles by default, debate and judge each independently, then take the maximum bundle credence. |
+| Bounded validity questions | `protocols/hypothesis_workers.py` | Assign six questions to independently budgeted workers; debate only qualifying reports. [Configuration and scoring](docs/hypothesis-workers.md). |
 | Trusted-vs-untrusted debate | `protocols/t_vs_u_debate.py` | Debate where one debater is told the sabotage and secretly works for a "not sabotaged" verdict; the judge knows which debater is untrusted. MonitoringBench and ASB, sabotaged samples only. |
 
 ## How the code is organised
@@ -302,6 +306,10 @@ standalone HTML report with coverage, file/region hotspots and inspection-to-evi
 flows. Each bundle receives an agent review of bug status, viable sabotage
 candidacy, paper agreement and topic; rendering requires completed bundle reviews.
 It does not run evaluations or change the protocol.
+For comparisons across prompt or protocol variants in the hypothesis-worker
+report format, use the [reusable extraction report generator](docs/extraction-reports.md).
+It renders any configured variants from saved analyses and completed reviews,
+without model calls.
 The [sabotage explorer](docs/sabotage-reference.md#sabotage-explorer-and-non-target-issues)
 provides readable mechanisms and paired source comparisons. The standalone
 [`docs/sabotage-explorer.html`](docs/sabotage-explorer.html) can be committed and

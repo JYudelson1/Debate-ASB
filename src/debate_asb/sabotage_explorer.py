@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import re
 from importlib.resources import files
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
+
+from markdown_it import MarkdownIt
 
 from debate_asb.known_issues import sample_catalog
 from debate_asb.sabotage import digest, read_registry, resolve_sabotage
@@ -96,10 +101,59 @@ def comparison_hunks(diff: str, start: int, end: int) -> list[dict]:
     ]
 
 
+def render_paper(source: str, path: Path) -> str:
+    """Render Markdown without raw HTML, embedding local figures for offline use."""
+    parser = MarkdownIt("commonmark", {"html": False}).enable(
+        ["table", "strikethrough"]
+    )
+    tokens = parser.parse(source)
+    root = path.parent.resolve()
+    image_types = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }
+    for token in tokens:
+        for child in token.children or []:
+            if child.type != "image":
+                continue
+            url = urlsplit(str(child.attrGet("src") or ""))
+            image = (root / unquote(url.path)).resolve()
+            mime = image_types.get(image.suffix.lower())
+            if (
+                not url.scheme
+                and not url.netloc
+                and image.is_relative_to(root)
+                and mime
+                and image.is_file()
+            ):
+                encoded = base64.b64encode(image.read_bytes()).decode("ascii")
+                child.attrSet("src", f"data:{mime};base64,{encoded}")
+            else:
+                # Keep unavailable figures readable without broken images or requests.
+                child.type = "text"
+                child.content = f"[Figure: {child.content}]"
+    return parser.renderer.render(tokens, parser.options, {})
+
+
 def build_payload() -> dict:
+    from debate_asb.datasets.asb import PROJECT_ROOT
+
     registry = read_registry()
     samples = []
     for sid, entry in registry["samples"].items():
+        paper_path = PROJECT_ROOT / "data/asb" / entry["workspace"] / "PAPER.md"
+        paper = None
+        if paper_path.is_file():
+            paper_bytes = paper_path.read_bytes()
+            paper = {
+                "path": f"{entry['workspace']}/PAPER.md",
+                "text": paper_bytes.decode("utf-8"),
+                "html": render_paper(paper_bytes.decode("utf-8"), paper_path),
+                "sha256": hashlib.sha256(paper_bytes).hexdigest(),
+            }
         locations = []
         for loc in entry["locations"]:
             comparison = next(
@@ -129,6 +183,7 @@ def build_payload() -> dict:
                 if not sid.startswith("rt_")
                 else sid.split("_")[1],
                 "paper_name": entry["paper_name"],
+                "paper": paper,
                 "status": entry["status"],
                 "label": entry["label"],
                 "mechanism": entry["mechanism"],

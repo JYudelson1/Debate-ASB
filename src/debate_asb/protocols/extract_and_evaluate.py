@@ -30,10 +30,12 @@ To rejudge previously extracted and debated bundles without rerunning either::
         -T replay=logs/<log>.eval -T reuse=extraction,bundle_debates
 """
 
+import math
+import re
 from dataclasses import asdict, dataclass
 from functools import cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from inspect_ai import task
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser
@@ -45,6 +47,7 @@ from debate_asb.evidence import (
     DebateTurn,
     EvaluationResult,
     EvidenceBundle,
+    EvidenceParseError,
     ExtractionResult,
     ModelMetadata,
     StageMetadata,
@@ -52,6 +55,7 @@ from debate_asb.evidence import (
     bundle_debate_result_from_dict,
     content_sha256,
     extraction_result_from_dict,
+    parse_extraction_output,
     render_evidence_bundles,
     result_to_dict,
 )
@@ -107,6 +111,9 @@ class ExtractAndEvaluateDebate:
     access: ToolAccess = ToolAccess()
     stop_after: str | None = None
     n_bundles: int = 6
+    extraction_prompt: str = "extract_and_evaluate/extract.md"
+    output_policy: Literal["fixed", "shortfall"] = "fixed"
+    zero_candidate_score: float | None = None
 
     def __post_init__(self) -> None:
         if (self.sabotaged.side, self.clean.side) != (Side.SABOTAGED, Side.CLEAN):
@@ -120,13 +127,29 @@ class ExtractAndEvaluateDebate:
         if self.stop_after not in (None, "extraction"):
             raise ValueError("stop_after must be None or 'extraction'")
 
+        if self.output_policy not in {"fixed", "shortfall"}:
+            raise ValueError("output_policy must be fixed or shortfall")
+        if (
+            self.output_policy == "shortfall"
+            and self.stop_after != "extraction"
+            and (self.zero_candidate_score is None)
+        ):
+            raise ValueError(
+                "shortfall evaluation requires explicit zero_candidate_score"
+            )
+        if self.zero_candidate_score is not None and (
+            not math.isfinite(self.zero_candidate_score)
+            or not 0 <= self.zero_candidate_score < 50
+        ):
+            raise ValueError("zero_candidate_score must be finite and below 50")
+
     async def run(self, sample: AuditSample, tools: ToolSet) -> ProtocolResult:
         if sample.setting != "asb":
             raise ValueError("extract-and-evaluate debate currently supports ASB only")
 
         extraction_data = await stage("extraction", lambda: self.extract(sample, tools))
         extraction = extraction_result_from_dict(extraction_data)
-        self._validate_sample(sample, extraction.metadata)
+        self._validate_extraction(sample, extraction)
         if self.stop_after == "extraction":
             note("stopped_after", stage="extraction")
             return ProtocolResult(credence=None)
@@ -181,7 +204,12 @@ class ExtractAndEvaluateDebate:
                 self.extractor_max_steps,
                 self.extractor_max_cost,
             )
-        result = ExtractionResult.from_raw(
+        count = (
+            declared_bundle_count(raw_output, self.n_bundles)
+            if self.output_policy == "shortfall"
+            else self.n_bundles
+        )
+        result = ExtractionResult(
             self._metadata(
                 sample,
                 "extraction",
@@ -189,14 +217,42 @@ class ExtractAndEvaluateDebate:
                 {"extract": content_sha256(prompt)},
                 costs_before,
                 {
-                    "bundle_count": self.n_bundles,
+                    "bundle_count": count,
                     "max_steps": self.extractor_max_steps,
+                    "max_cost_usd": self.extractor_max_cost,
+                    "extraction_prompt": self.extraction_prompt,
+                    "output_policy": self.output_policy,
+                    **(
+                        {
+                            "max_bundles": self.n_bundles,
+                            "allow_empty_extraction": True,
+                            "zero_candidate_score": self.zero_candidate_score,
+                        }
+                        if self.output_policy == "shortfall"
+                        else {}
+                    ),
                 },
             ),
+            parse_extraction_output(raw_output, count) if count else (),
             raw_output,
+            {
+                "outcome": "qualifying_evidence_extracted"
+                if count
+                else "no_qualifying_evidence_extracted",
+                "bundle_limit": self.n_bundles,
+                "returned_count": count,
+                "shortfall": count < self.n_bundles,
+            }
+            if self.output_policy == "shortfall"
+            else {},
         )
         note("extraction_complete", bundles=len(result.bundles))
         return result_to_dict(result)
+
+    def _validate_extraction(
+        self, sample: AuditSample, extraction: ExtractionResult
+    ) -> None:
+        self._validate_sample(sample, extraction.metadata)
 
     async def debate_bundles(
         self,
@@ -352,7 +408,7 @@ class ExtractAndEvaluateDebate:
         self, sample: AuditSample, bundle_count: int
     ) -> StageMetadata:
         prompts = {
-            "extract": _prompt("extract_and_evaluate/extract.md"),
+            "extract": _prompt(self.extraction_prompt),
             "debater": _prompt("extract_and_evaluate/debater.md"),
             "judge": _prompt("extract_and_evaluate/judge.md"),
         }
@@ -419,7 +475,7 @@ class ExtractAndEvaluateDebate:
             _prompt(f"access_{access}.md"), max_steps=self.extractor_max_steps
         )
         return _render(
-            _prompt("extract_and_evaluate/extract.md"),
+            _prompt(self.extraction_prompt),
             access=access_text.strip(),
             n_bundles=self.n_bundles,
         )
@@ -483,6 +539,25 @@ def _render(template: str, **values: object) -> str:
     return template
 
 
+def declared_bundle_count(raw: str, limit: int) -> int:
+    """Honor the historical draft's explicit shortfall; never fill empty slots."""
+    first = raw.lstrip("\r\n").splitlines()[0] if raw.strip() else ""
+    if not first.startswith("Shortfall:"):
+        return limit
+    match = re.fullmatch(
+        r"Shortfall: (\d+) of (\d+) qualifying bundles found within the available inspection budget\.",
+        first,
+    )
+    if not match:
+        raise EvidenceParseError("Malformed shortfall declaration")
+    count, declared_limit = map(int, match.groups())
+    if declared_limit != limit or not 0 <= count < limit:
+        raise EvidenceParseError("Shortfall count or bundle limit is inconsistent")
+    if count == 0 and raw.strip() != first:
+        raise EvidenceParseError("Zero shortfall must be the entire response")
+    return count
+
+
 @task
 def extract_and_evaluate_debate(
     extractor_model: str = DEFAULT_MODEL,
@@ -499,6 +574,10 @@ def extract_and_evaluate_debate(
     stop_after: str | None = None,
     n_bundles: int = 6,
     extractor_max_steps: int = 40,
+    extractor_max_cost: float = 3.0,
+    extraction_prompt: str = "extract_and_evaluate/extract.md",
+    output_policy: Literal["fixed", "shortfall"] = "fixed",
+    zero_candidate_score: float | None = None,
 ):
     extractor = Participant(ModelSpec(extractor_model, extractor_provider))
     debater = ModelSpec(debater_model, debater_provider)
@@ -511,6 +590,10 @@ def extract_and_evaluate_debate(
         stop_after=stop_after,
         n_bundles=n_bundles,
         extractor_max_steps=extractor_max_steps,
+        extractor_max_cost=extractor_max_cost,
+        extraction_prompt=extraction_prompt,
+        output_policy=output_policy,
+        zero_candidate_score=zero_candidate_score,
     )
     return protocol_task(
         protocol,

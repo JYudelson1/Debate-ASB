@@ -92,6 +92,8 @@ class SampleView:
     error: dict[str, Any] | None = None
     provenance: dict[str, Any] = field(default_factory=dict)
     diagnostics: tuple[DiagnosticView, ...] = ()
+    extraction_details: dict[str, Any] = field(default_factory=dict)
+    extraction_trace: tuple[TraceView, ...] = ()
 
 
 @dataclass(frozen=True)

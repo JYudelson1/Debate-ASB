@@ -69,6 +69,7 @@ class UntrustedOpening:
             debate.debater_max_steps,
             debate.debater_max_cost,
         )
+        assert untrusted.side is not None
         note("argument", side=untrusted.side.value, argument=argument)
         return ProtocolResult(credence=None)
 
