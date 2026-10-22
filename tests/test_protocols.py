@@ -119,6 +119,7 @@ def test_generation_the_provider_failed_is_retried(script, tmp_path):
         [tool_call("list_files"), failed, say("Looks fine.\n\nSabotage Credence: 40%")]
     )
     log = run(lone_judge(sample_ids="hop_jump"), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
     calls = model_calls(sample, "judge")
     assert (
@@ -136,6 +137,7 @@ def test_generation_that_hit_the_output_limit_is_retried(script, tmp_path):
         [tool_call("list_files"), runaway, say("Looks fine.\n\nSabotage Credence: 40%")]
     )
     log = run(lone_judge(sample_ids="hop_jump"), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
     calls = model_calls(sample, "judge")
     assert len(calls) == 3 and calls[2].config.cache is False
