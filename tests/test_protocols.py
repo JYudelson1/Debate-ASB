@@ -120,6 +120,7 @@ def test_generation_the_provider_failed_is_retried(script, tmp_path):
         [tool_call("list_files"), failed, say("Looks fine.\n\nSabotage Credence: 40%")]
     )
     log = run(lone_judge(sample_ids="hop_jump"), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
     calls = model_calls(sample, "judge")
     assert (
@@ -137,6 +138,7 @@ def test_generation_that_hit_the_output_limit_is_retried(script, tmp_path):
         [tool_call("list_files"), runaway, say("Looks fine.\n\nSabotage Credence: 40%")]
     )
     log = run(lone_judge(sample_ids="hop_jump"), tmp_path)
+    assert log.samples is not None
     [sample] = log.samples
     calls = model_calls(sample, "judge")
     assert len(calls) == 3 and calls[2].config.cache is False
@@ -306,6 +308,7 @@ def test_judge_access_task_arg(script, tmp_path):
     script(scripted_debate() + scripted_debate())
     no_access = run(debate(sample_ids="hop_jump", judge_access=False), tmp_path / "no")
     default = run(debate(sample_ids="hop_jump"), tmp_path / "default")
+    assert no_access.samples is not None and default.samples is not None
     [no], [yes] = no_access.samples, default.samples
     assert model_calls(no, "judge")[0].tools == []
     assert "list_files" in {t.name for t in model_calls(yes, "judge")[0].tools}
@@ -326,6 +329,7 @@ def test_debaters_state_probability_task_arg(script, tmp_path):
         tmp_path / "told",
     )
     default = run(debate(sample_ids="hop_jump"), tmp_path / "default")
+    assert told.samples is not None and default.samples is not None
     rule = (PROMPTS / "asb" / "debater_no_probability.md").read_text().strip()
     end = "Respond directly to your opponent's strongest points."
     for role in ("debater_sabotaged", "debater_clean"):

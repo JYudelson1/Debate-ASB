@@ -337,7 +337,7 @@ def log_page(root: Path, rel: str) -> str:
     for s in ordered_summaries(path):
         label, credence, correct = outcome(s)
         cost = (
-            sum(next(iter(s.scores.values())).metadata.get("cost", {}).values())
+            sum((next(iter(s.scores.values())).metadata or {}).get("cost", {}).values())
             if s.scores
             else 0.0
         )
@@ -537,10 +537,8 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    server.root = Path(args.dir).resolve()  # type: ignore[attr-defined]
-    print(
-        f"Serving logs under {server.root} at http://127.0.0.1:{args.port}", flush=True
-    )  # type: ignore[attr-defined]
+    server.root = root = Path(args.dir).resolve()  # type: ignore[attr-defined]
+    print(f"Serving logs under {root} at http://127.0.0.1:{args.port}", flush=True)
     server.serve_forever()
 
 

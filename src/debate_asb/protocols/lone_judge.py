@@ -13,7 +13,13 @@ from inspect_ai import task
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser
 
 from debate_asb.datasets import Dataset, load_samples
-from debate_asb.models import DEFAULT_MODEL, DEFAULT_PROVIDER, ModelSpec, Participant
+from debate_asb.models import (
+    DEFAULT_MODEL,
+    DEFAULT_PROVIDER,
+    ModelSpec,
+    Participant,
+    ReasoningEffort,
+)
 from debate_asb.protocol import (
     AuditSample,
     ProtocolResult,
@@ -58,7 +64,7 @@ class LoneJudge:
 def lone_judge(
     judge_model: str = DEFAULT_MODEL,
     judge_provider: str = DEFAULT_PROVIDER,
-    judge_reasoning_effort: str | None = None,
+    judge_reasoning_effort: ReasoningEffort | None = None,
     judge_prompt_variant: str | None = None,  # e.g. "verify": asb/variants/verify/
     dataset: Dataset = "asb",
     sample_ids: str | list[str] | None = None,

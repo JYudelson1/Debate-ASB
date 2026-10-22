@@ -165,7 +165,8 @@ async def generate(
     times; otherwise its truncated, empty or runaway reply would pass for the
     participant's answer.
     """
-    for attempt in range(1 + GENERATION_RETRIES):
+    attempt = 0
+    while True:
         async with span(role, type="participant"):
             output = await participant.model.get_model().generate(
                 messages,
@@ -186,12 +187,15 @@ async def generate(
 
         if output.stop_reason not in RETRIED_STOP_REASONS:
             break
+        attempt += 1
         note(
             "generation_error",
             role=role,
-            attempt=attempt + 1,
+            attempt=attempt,
             stop_reason=output.stop_reason,
         )
+        if attempt > GENERATION_RETRIES:
+            break
     messages.append(output.message)
     return output
 

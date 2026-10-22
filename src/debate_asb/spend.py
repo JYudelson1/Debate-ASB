@@ -76,8 +76,10 @@ def sample_spend(events: list) -> Spend:
             continue
         if event.error is not None:
             spend.failed_attempts += 1
-            response = (event.call.response if event.call else None) or {}
-            role = roles.get(event.span_id, UNATTRIBUTED)
+            response = cast(
+                dict[str, Any], (event.call.response if event.call else None) or {}
+            )
+            role = roles.get(event.span_id or "", UNATTRIBUTED)
             spend.by_role[role] += (response.get("usage") or {}).get("cost") or 0.0
             continue
         spend.api_calls += 1

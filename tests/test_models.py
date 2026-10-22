@@ -1,6 +1,9 @@
 """ModelSpec pinning rules, checked against a canned OpenRouter endpoints listing."""
 
+from typing import cast
+
 import pytest
+from inspect_ai.model._providers.openai_compatible import OpenAICompatibleAPI
 from inspect_ai.tool import ToolInfo, ToolParams
 
 from debate_asb import models
@@ -77,7 +80,8 @@ def test_reasoning_effort_reaches_the_model(monkeypatch):
 def request_body(spec: ModelSpec) -> dict:
     """The OpenRouter-specific part of the request `spec` would send (built offline)."""
     model = spec.get_model()
-    return model.api.completion_params(model.config, tools=False)["extra_body"]
+    api = cast(OpenAICompatibleAPI, model.api)
+    return api.completion_params(model.config, tools=False)["extra_body"]
 
 
 @pytest.mark.parametrize("effort", ["none", "medium", "xhigh"])
@@ -97,4 +101,5 @@ def test_tools_are_sent_without_strict_mode(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "offline")
     model = ModelSpec("m", "google-ai-studio").get_model()
     tool = ToolInfo(name="t", description="A tool.", parameters=ToolParams())
-    assert model.api.tools_to_openai([tool])[0]["function"]["strict"] is False
+    api = cast(OpenAICompatibleAPI, model.api)
+    assert api.tools_to_openai([tool])[0]["function"].get("strict") is False
