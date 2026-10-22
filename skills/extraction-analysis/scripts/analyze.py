@@ -862,6 +862,22 @@ def collect(log_paths: list[Path], repo: Path, out: Path, overrides: dict) -> No
                 or (sample.store.get("evaluation") or {}).get("extraction")
                 or {}
             )
+            investigation = extraction.get("investigation") or sample.store.get(
+                "hypothesis_investigation"
+            )
+            extraction_complete = bool(extraction.get("metadata"))
+            no_candidates = bool(
+                extraction_complete
+                and investigation
+                and investigation.get("outcome") == "no_qualifying_evidence_extracted"
+                and not extraction.get("bundles")
+            )
+            extraction_costs = extraction.get("metadata", {}).get("costs_usd") or {
+                role: cost
+                for role, cost in (sample.store.get("cost") or {}).items()
+                if role in {"extractor", "coordinator"}
+                or role.startswith("hypothesis_worker_")
+            }
             trace = extraction_trace(sample)
             context = load_rubric_context(
                 str(sample.id),
@@ -916,8 +932,15 @@ def collect(log_paths: list[Path], repo: Path, out: Path, overrides: dict) -> No
                     "replayed_stages": sample.store.get("replayed_stages"),
                     "replay_source": sample.store.get("replay_source"),
                     "extraction_metadata": extraction.get("metadata"),
+                    "extraction_complete": extraction_complete,
+                    "no_qualifying_evidence": no_candidates,
+                    "investigation": investigation,
                     "usage": (sample.store.get("usage") or {}).get("extractor"),
-                    "cost_usd": (sample.store.get("cost") or {}).get("extractor"),
+                    "cost_usd": sum(extraction_costs.values())
+                    if extraction_costs
+                    else None,
+                    "cost_by_role": extraction_costs,
+                    "usage_by_role": sample.store.get("usage"),
                     "diagnostics": [
                         jsonable(d) if hasattr(d, "model_dump") else d.__dict__
                         for d in view.diagnostics
@@ -987,17 +1010,20 @@ def collect(log_paths: list[Path], repo: Path, out: Path, overrides: dict) -> No
     for sample in samples:
         dump(out / sample["trace_file"], sample.pop("_trace"))
         honest = sample["target"] == "honest"
+        empty = sample.get("no_qualifying_evidence", False)
         review["samples"][sample["key"]] = {
             "sabotage_reference_sha256": fingerprint(sample.get("sabotage_reference")),
-            "included": "not_applicable" if honest else "unknown",
+            "included": "not_applicable" if honest else "no" if empty else "unknown",
             "matching_bundles": [],
-            "single_bundle_complete": None,
+            "single_bundle_complete": False if empty and not honest else None,
             "sufficient_bundles": [],
             "observation_explains": "not_applicable" if honest else "unknown",
             "failure_stage": "not_applicable" if honest else "unknown",
             "failure_modes": [],
             "summary": "Honest control; no documented sabotage."
             if honest
+            else "No qualifying evidence extracted; no bundles reached debate. This does not establish codebase validity."
+            if empty
             else "Pending semantic review.",
             "trace_refs": [],
             "confidence_note": "",

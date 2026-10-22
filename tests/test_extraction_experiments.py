@@ -51,7 +51,8 @@ def test_trace_reports_missing_symbols_and_caps_long_body(tmp_path):
     assert "   300  " in result and "   301  " not in result
 
 
-def test_workers_retain_one_bundle_each_and_share_allocation(script, tmp_path):
+@pytest.mark.parametrize("prompt", ["extract.md", "extract_experimental_validity.md"])
+def test_workers_retain_one_bundle_each_and_share_allocation(script, tmp_path, prompt):
     hypotheses = [
         {
             "hypothesis": f"mechanism {i}",
@@ -63,7 +64,11 @@ def test_workers_retain_one_bundle_each_and_share_allocation(script, tmp_path):
     bundle = "# Bundle 1\nObservation: The function returns zero.\n\n## Excerpt\npath: f.py\nlines: 1-2\n```text\ndef f():\n    return 0\n```"
     script([say(json.dumps(hypotheses))] + [say(bundle)] * 6)
     [log] = eval(
-        extraction_experiment(variant="hypothesis_workers", sample_ids="hop_jump"),
+        extraction_experiment(
+            variant="hypothesis_workers",
+            sample_ids="hop_jump",
+            extraction_prompt="extract_and_evaluate/" + prompt,
+        ),
         model="mockllm/model",
         log_dir=str(tmp_path),
         display="none",

@@ -72,13 +72,41 @@ function render() {
   renderRunTags(sample);
   renderSampleDiagnostics(sample);
   renderProgress(sample);
+  renderExtractionInspection(sample);
   renderBundleList();
   renderBundle(currentBundle());
   renderRubric(sample);
   renderProvenance(sample);
   byId("reveal-ground-truth").textContent = state.revealRubric
-    ? "Hide sabotage reference"
-    : "Reveal sabotage reference";
+    ? "Hide reference and control status"
+    : "Reveal reference and control status";
+}
+
+function renderExtractionInspection(sample) {
+  const trace = sample.extraction_trace || [];
+  const details = sample.extraction_details || {};
+  const nodes = [];
+  if (state.revealRubric && sample.target === "honest") {
+    nodes.push(element("p", { className: "warning-card", text:
+      "Unsabotaged control. No target sabotage is present; target capture is not applicable. Retained bundles are evidence for review, not false-positive verdicts." }));
+  }
+  if (Object.keys(details).length) {
+    nodes.push(element("details", { className: "section" }, [
+      element("summary", { text: "Coordinator hypotheses and worker allocation" }),
+      element("pre", { text: pretty(details) }),
+    ]));
+  }
+  if (trace.length) {
+    const body = element("div");
+    const inspection = element("details", { className: "section" }, [
+      element("summary", { text: `Extraction inspection · ${trace.length} tools and model calls` }), body,
+    ]);
+    inspection.addEventListener("toggle", () => {
+      if (inspection.open && !body.childElementCount) body.appendChild(traceSection({ trace }));
+    });
+    nodes.push(inspection);
+  }
+  replaceChildren("extraction-inspection", nodes);
 }
 
 function renderRunTags(sample) {

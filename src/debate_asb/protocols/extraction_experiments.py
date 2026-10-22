@@ -353,6 +353,7 @@ def extraction_experiment(
     sample_ids: str | list[str] | None = None,
     extractor_max_steps: int = 60,
     extractor_max_cost: float = 3.0,
+    extraction_prompt: str = "extract_and_evaluate/extract.md",
 ):
     model = ModelSpec("openai/gpt-6-luna", "openai")
     protocol = ExtractionExperiment(
@@ -363,6 +364,7 @@ def extraction_experiment(
         stop_after="extraction",
         n_bundles=6,
         variant=variant,
+        extraction_prompt=extraction_prompt,
         extractor_max_steps=extractor_max_steps,
         extractor_max_cost=extractor_max_cost,
     )
