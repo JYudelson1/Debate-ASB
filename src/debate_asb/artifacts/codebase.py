@@ -10,6 +10,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
+from inspect_ai.tool import ToolError
 from inspect_ai.util import sandbox
 
 from debate_asb.artifacts.base import (
@@ -58,6 +59,9 @@ class Codebase(Artifact):
             recursive: List every file under the directory instead of one level.
         """
         target = self._resolve(directory)
+        if not target.is_dir():
+            # iterdir() would raise NotADirectoryError, which fails the sample.
+            raise ToolError(f"{directory} is a file, not a directory")
         if recursive:
             lines = [self._describe(p) for p in self._files(target)]
         else:
@@ -87,6 +91,10 @@ class Codebase(Artifact):
             num_lines: How many lines to read (at most 300 per call).
         """
         file = self._resolve(path)
+        if file.is_dir():
+            # Opening a directory raises an OS error whose message Inspect shows the
+            # model, and on Windows it contains the host path (with the variant name).
+            raise ToolError(f"{path} is a directory, not a file")
         if _is_binary(file):
             return f"{path} is a binary file ({file.stat().st_size:,} bytes)."
         all_lines = file.read_text(errors="replace").splitlines()

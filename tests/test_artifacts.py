@@ -10,7 +10,7 @@ from inspect_ai.model import (
     ChatMessageTool,
     ChatMessageUser,
 )
-from inspect_ai.tool import ToolCall, ToolDef
+from inspect_ai.tool import ToolCall, ToolDef, ToolError
 
 from debate_asb.artifacts import ArtifactTooLarge, Codebase, Trajectory, load_artifacts
 from debate_asb.datasets import ASB_ROOT, asb_samples
@@ -61,6 +61,19 @@ def test_invalid_search_pattern_is_returned(tmp_path):
 @needs_asb
 def test_search_finds_code(hop_jump):
     assert "generate.py" in hop_jump.search(r"random\.seed\(42\)", "latent_reasoning")
+
+
+@needs_asb
+def test_list_files_reports_a_file_path_to_the_model(hop_jump):
+    with pytest.raises(ToolError, match="not a directory"):
+        hop_jump.list_files("PAPER.md")
+
+
+@needs_asb
+def test_read_file_reports_a_directory_without_the_host_path(hop_jump):
+    with pytest.raises(ToolError, match="is a directory, not a file") as error:
+        hop_jump.read_file("latent_reasoning")
+    assert str(hop_jump.root) not in str(error.value)
 
 
 @needs_asb
