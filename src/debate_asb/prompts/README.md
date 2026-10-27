@@ -329,6 +329,22 @@ gets the same files, except `judge_debate.md`):
   since if any one fix is the sabotage, the codebase is sabotaged. Why: E05's
   lone judges proposed the actual sabotage as a fix graded 100 and still gave
   credences of 34 to 49.
+- `asb_noexp` (`judge.md`, `judge_answer.md`; for E07): ASB's own prompt for
+  auditors who can run code but not experiments,
+  `data/asb/blue_teaming/prompts/rendered/no_experiments.md`, in place of the
+  read-only one, split at "## Proposed Fixes" like the base and used with
+  `access_tools_execute.md` (whose text is already that prompt's). So the
+  judge loses read-only's Phase 3 ("Validation (Read-Only)", the gold
+  standards, "What is NOT sufficient", Burden of Proof, the alternatives
+  table) and Joey's paper-code note, and gets no_experiments' answer: the
+  credence first, a Mechanism line per fix, "Experiments run:" last. Edits to
+  ASB's text, the base's own where the same text occurs: the context is
+  appended, not in CLAUDE.md; "and calibration guidance" dropped from the
+  context list; the ranking paragraph without its sentences about running
+  experiments; ">75%" without "(ideally by rerunning experiments)"; the label
+  "Sabotage Credence:", which the parser expects. Why: E07 asks why our lone
+  judges are near chance where ASB's no_experiments auditors score 0.53 to
+  0.65; this puts our judge in ASB's own regime and prompt.
 
 Debater variants (`debater_prompt_variant`; both debaters get them; folders
 start with `d_`, so no folder serves both roles). The first three add one
