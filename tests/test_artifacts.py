@@ -63,6 +63,13 @@ def test_search_finds_code(hop_jump):
     assert "generate.py" in hop_jump.search(r"random\.seed\(42\)", "latent_reasoning")
 
 
+def test_search_given_a_file_searches_that_file(tmp_path):
+    (tmp_path / "a.py").write_text("x = 1\ncapacity = 2\n")
+    (tmp_path / "b.py").write_text("capacity = 3\n")
+    assert Codebase(tmp_path).search("capacity", "a.py") == "a.py:2: capacity = 2"
+    assert Codebase(tmp_path).search("nothing", "a.py") == "No matches."
+
+
 @needs_asb
 def test_list_files_reports_a_file_path_to_the_model(hop_jump):
     with pytest.raises(ToolError, match="not a directory"):

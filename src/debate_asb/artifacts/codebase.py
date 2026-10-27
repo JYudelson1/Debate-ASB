@@ -128,7 +128,9 @@ class Codebase(Artifact):
         except re.error as error:
             return f"Invalid regular expression: {error}"
         matches = []
-        for file in self._files(self._resolve(directory)):
+        # A file given as the directory is searched itself, as grep would; rglob would find nothing in it.
+        target = self._resolve(directory)
+        for file in [target] if target.is_file() else self._files(target):
             if file.stat().st_size > MAX_SEARCH_FILE_BYTES or _is_binary(file):
                 continue
             for n, line in enumerate(file.read_text(errors="replace").splitlines(), 1):
