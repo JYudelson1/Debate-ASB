@@ -58,6 +58,28 @@ def test_invalid_search_pattern_is_returned(tmp_path):
     assert "unterminated subpattern" in result
 
 
+def test_search_times_out_pathological_patterns_and_retains_partial_results(
+    tmp_path, monkeypatch
+):
+    import debate_asb.artifacts.codebase as codebase_module
+
+    monkeypatch.setattr(codebase_module, "SEARCH_TIMEOUT_SECONDS", 0.01)
+    (tmp_path / "a.txt").write_text("fast match\n" + "a" * 100_000 + "!\n")
+    result = Codebase(tmp_path).search(r"fast match|(a+)+$")
+    assert "timed out" in result
+    assert "Results are incomplete" in result
+    assert "a.txt:1: fast match" in result
+
+
+def test_search_preserves_python_regex_syntax_and_case_controls(tmp_path):
+    (tmp_path / "a.py").write_text("Alpha=7\nalpha=8\n")
+    codebase = Codebase(tmp_path)
+    assert codebase.search(r"(?<=Alpha=)\d") == "a.py:1: Alpha=7"
+    assert len(codebase.search("ALPHA", ignore_case=True).splitlines()) == 2
+    assert codebase.search("ALPHA") == "No matches."
+    assert codebase.search(r"(?<=a+)x").startswith("Invalid regular expression:")
+
+
 @needs_asb
 def test_search_finds_code(hop_jump):
     assert "generate.py" in hop_jump.search(r"random\.seed\(42\)", "latent_reasoning")
