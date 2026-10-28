@@ -38,7 +38,7 @@ function initialize() {
   byId("run-summary").textContent = report.source_log;
   const selector = byId("sample-select");
   report.samples.forEach((sample, index) => {
-    const option = element("option", { text: `${sample.id} · epoch ${sample.epoch}` });
+    const option = element("option", { text: `${sample.run_label ? sample.run_label + " · " : ""}${sample.id} · epoch ${sample.epoch}` });
     option.value = String(index);
     selector.appendChild(option);
   });
@@ -117,6 +117,7 @@ function renderRunTags(sample) {
     tag(`epoch ${sample.epoch}`),
     tag(sample.paper_name || "paper unknown"),
   ];
+  if (sample.run_label) tags.unshift(tag(sample.run_label));
   if (revision.commit) tags.push(tag(`git ${revision.commit}${revision.dirty ? " · dirty" : ""}`));
   if (state.revealRubric && sample.target) tags.push(tag(`target: ${sample.target}`));
   replaceChildren("run-tags", tags);
