@@ -292,3 +292,30 @@ def test_heatmap_retains_repeated_presentations_inside_one_tool_result():
     )
     assert result["files"][0]["total"] == 2
     assert result["phases"][0]["new_lines"] == 1
+
+
+def test_reviewed_honest_controls_keep_quality_reviews_without_capture_rate(tmp_path):
+    spec = variant(tmp_path, "honest", included="not_applicable")
+    analysis_path = tmp_path / spec["analysis"]
+    analysis = json.loads(analysis_path.read_text())
+    analysis["samples"][0]["target"] = "honest"
+    analysis["manifest"]["samples_sha256"] = fingerprint(analysis["samples"])
+    write(analysis_path, analysis)
+    review_path = tmp_path / spec["review"]
+    review = json.loads(review_path.read_text())
+    row = review["samples"]["sample-1"]
+    row["single_bundle_complete"] = None
+    row["exposure_status"] = "not_applicable"
+    row["bundle_reviews"]["1"].update(
+        target_relation="not_applicable", target_reason="Unsabotaged control"
+    )
+    write(review_path, review)
+    config = write(tmp_path / "config.json", {"schema_version": 1, "variants": [spec]})
+    data = build_report(config, tmp_path / "out")
+    assert data["variants"][0]["honest_control"]
+    assert data["variants"][0]["eligible"] == 0
+    assert data["variants"][0]["parsed"] == 1
+    assert data["samples"][0]["review_status"] == "reviewed"
+    assert data["samples"][0]["bundle_reviews"]["1"]["bug_status"] == "yes"
+    summary = (tmp_path / "out" / "report.md").read_text()
+    assert "Not applicable | Not applicable | 1/1" in summary
