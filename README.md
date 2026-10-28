@@ -17,6 +17,8 @@ echo 'OPENROUTER_API_KEY=sk-or-...' > .env   # gitignored
 uv run pytest                                # offline, no API calls
 ```
 
+For Codex Cloud setup, see [docs/codex-cloud.md](docs/codex-cloud.md).
+
 Python is formatted with the pinned Ruff version and settings in
 `pyproject.toml`. Run `scripts/format.sh` before committing. VS Code and Cursor
 also pick up the checked-in format-on-save settings from `.vscode/`.
