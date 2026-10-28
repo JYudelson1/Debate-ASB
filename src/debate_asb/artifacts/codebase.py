@@ -71,7 +71,7 @@ class Codebase(Artifact):
                     continue
                 if p.is_dir():
                     lines.append(
-                        f"{p.relative_to(self.root)}/  ({len(self._files(p))} files)"
+                        f"{p.relative_to(self.root).as_posix()}/  ({len(self._files(p))} files)"
                     )
                 else:
                     lines.append(self._describe(p))
@@ -133,7 +133,9 @@ class Codebase(Artifact):
                 continue
             for n, line in enumerate(file.read_text(errors="replace").splitlines(), 1):
                 if regex.search(line):
-                    matches.append(f"{file.relative_to(self.root)}:{n}: {line[:300]}")
+                    matches.append(
+                        f"{file.relative_to(self.root).as_posix()}:{n}: {line[:300]}"
+                    )
                     if len(matches) >= MAX_SEARCH_MATCHES:
                         matches.append("... stopped at 100 matches. Narrow the search.")
                         return "\n".join(matches)
@@ -168,7 +170,7 @@ class Codebase(Artifact):
         ]
         for file in included:
             parts.append(
-                f"===== {file.relative_to(self.root)} =====\n{file.read_text(errors='replace')}"
+                f"===== {file.relative_to(self.root).as_posix()} =====\n{file.read_text(errors='replace')}"
             )
         parts.append("===== Files not included =====\n" + self._summarize(excluded))
         dump = "\n\n".join(parts)
@@ -233,12 +235,14 @@ class Codebase(Artifact):
         return resolved
 
     def _describe(self, file: Path) -> str:
-        return f"{file.relative_to(self.root)}  ({file.stat().st_size:,} bytes)"
+        return (
+            f"{file.relative_to(self.root).as_posix()}  ({file.stat().st_size:,} bytes)"
+        )
 
     def _summarize(self, files: list[Path]) -> str:
         if len(files) <= MAX_LIST_ENTRIES:
             return "\n".join(self._describe(f) for f in files) or "(none)"
-        by_dir = Counter(str(f.parent.relative_to(self.root)) for f in files)
+        by_dir = Counter(f.parent.relative_to(self.root).as_posix() for f in files)
         return "\n".join(f"{d}/  ({n} files)" for d, n in sorted(by_dir.items()))
 
 
