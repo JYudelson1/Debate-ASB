@@ -7,9 +7,11 @@ tool when the sample was set up with code execution.
 """
 
 import re
+import time
 from collections import Counter
 from pathlib import Path
 
+import regex
 from inspect_ai.tool import ToolError
 from inspect_ai.util import sandbox
 
@@ -28,6 +30,7 @@ MAX_READ_LINES = 300
 MAX_LINE_CHARS = 2000
 MAX_SEARCH_MATCHES = 100
 MAX_SEARCH_FILE_BYTES = 10_000_000
+SEARCH_TIMEOUT_SECONDS = 10.0
 
 # dump_all() includes code, docs and config in full; everything else (datasets,
 # logs, results, lockfiles, binaries) is listed by name and size only.
@@ -124,15 +127,32 @@ class Codebase(Artifact):
             ignore_case: Case-insensitive matching.
         """
         try:
-            regex = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
+            # Preserve the advertised Python-re syntax/error contract; VERSION0
+            # supplies compatible matching with an enforceable CPU timeout.
+            re.compile(pattern, re.IGNORECASE if ignore_case else 0)
+            compiled = regex.compile(
+                pattern, regex.VERSION0 | (regex.IGNORECASE if ignore_case else 0)
+            )
         except re.error as error:
             return f"Invalid regular expression: {error}"
         matches = []
+        deadline = time.monotonic() + SEARCH_TIMEOUT_SECONDS
         for file in self._files(self._resolve(directory)):
             if file.stat().st_size > MAX_SEARCH_FILE_BYTES or _is_binary(file):
                 continue
             for n, line in enumerate(file.read_text(errors="replace").splitlines(), 1):
-                if regex.search(line):
+                remaining = deadline - time.monotonic()
+                try:
+                    if remaining <= 0:
+                        raise TimeoutError
+                    found = compiled.search(line, timeout=remaining)
+                except TimeoutError:
+                    return (
+                        f"Search timed out after {SEARCH_TIMEOUT_SECONDS:g} seconds. "
+                        "Results are incomplete; narrow the pattern or directory.\n"
+                        + "\n".join(matches)
+                    )
+                if found:
                     matches.append(
                         f"{file.relative_to(self.root).as_posix()}:{n}: {line[:300]}"
                     )
