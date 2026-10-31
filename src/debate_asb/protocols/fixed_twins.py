@@ -17,7 +17,7 @@ from pathlib import Path
 from inspect_ai import task
 from inspect_ai.dataset import Sample
 
-from debate_asb.datasets import ASB_ROOT, asb_samples
+from debate_asb.datasets import ASB_ROOT, CORE_SAMPLE_IDS, asb_samples
 from debate_asb.models import (
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
@@ -35,10 +35,11 @@ FIXED = "_fixed"
 
 
 def twin_samples(
-    sample_ids: str | list[str], sabotaged_fixed_root: str | None = None
+    sample_ids: str | list[str] | None, sabotaged_fixed_root: str | None = None
 ) -> list[Sample]:
     """ASB samples by id, with `<sabotaged id>_fixed` read from sabotaged_fixed_root."""
     ids = sample_ids.split(",") if isinstance(sample_ids, str) else sample_ids
+    ids = ids or CORE_SAMPLE_IDS
     bases = asb_samples([i.removesuffix(FIXED) for i in ids])
     patched = {
         str(b.id) + FIXED: b for b in bases if b.target == "sabotaged"
@@ -71,7 +72,7 @@ def _patched(sample_id: str, base: Sample, root: str | None) -> Sample:
 
 @task
 def twin_lone(
-    sample_ids: str | list[str],
+    sample_ids: str | list[str] | None = None,
     judge_model: str = DEFAULT_MODEL,
     judge_provider: str = DEFAULT_PROVIDER,
     judge_reasoning_effort: ReasoningEffort | None = None,
@@ -92,7 +93,7 @@ def twin_lone(
 
 @task
 def twin_debate(
-    sample_ids: str | list[str],
+    sample_ids: str | list[str] | None = None,
     debater_model: str = DEFAULT_MODEL,
     debater_provider: str = DEFAULT_PROVIDER,
     judge_model: str = DEFAULT_MODEL,
