@@ -161,7 +161,10 @@ def paper_bootstrap(
     values = []
     for _ in range(n):
         boot = [
-            replace(a, sample=f"{p}#{j}_{a.sample.rsplit('_', 1)[-1]}")
+            replace(
+                a,
+                sample=f"{p}#{j}_{a.sample.removesuffix('_fixed').rsplit('_', 1)[-1]}",
+            )
             for j, p in enumerate(rng.choices(papers, k=len(papers)))
             for a in by_paper[p]
         ]

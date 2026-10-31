@@ -5,7 +5,7 @@ from inspect_ai import eval as inspect_eval
 
 from debate_asb.datasets import ASB_ROOT
 from debate_asb.fixscore import answer_keys
-from debate_asb.metrics import paper
+from debate_asb.metrics import Answer, paper, paper_bootstrap
 from debate_asb.protocols.fixed_twins import twin_debate, twin_lone, twin_samples
 
 pytestmark = needs_asb
@@ -62,6 +62,15 @@ def test_fixed_ids_share_their_paper_and_key():
     assert paper("hop_stride_fixed") == paper("hop_stride") == "hop"
     assert paper("hop_jump_fixed") == "hop"
     assert "hop_jump" in answer_keys()
+
+
+def test_bootstrap_keeps_fixed_samples_apart():
+    answers = [
+        Answer("hop_jump_fixed", 1, True, 60.0),
+        Answer("hop_double_fixed", 1, True, 70.0),
+        Answer("hop_stride_fixed", 1, False, 40.0),
+    ]
+    assert paper_bootstrap(lambda a: len({x.sample for x in a}), answers, 5) == (3, 3)
 
 
 def test_twin_lone(script, tmp_path):
