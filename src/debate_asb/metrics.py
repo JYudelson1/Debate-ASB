@@ -51,8 +51,8 @@ class Answer:
 
 
 def paper(sample: str) -> str:
-    """The source paper a sample comes from, as ASB groups them: hop_jump -> hop."""
-    return sample.rsplit("_", 1)[0]
+    """The source paper a sample comes from, as ASB groups them: hop_jump -> hop, hop_stride_fixed -> hop."""
+    return sample.removesuffix("_fixed").rsplit("_", 1)[0]
 
 
 def _auroc(points: list[tuple[str, bool, float]]) -> float:

@@ -229,7 +229,8 @@ def sabotaged_samples(logs: str | list[str], mode: str) -> list[Sample]:
         for s in read_eval_log_samples(str(path), resolve_attachments=True):
             if s.target != "sabotaged":
                 continue
-            key, basis = keys[str(s.id)]
+            # A sabotaged codebase with its paper's fixes applied keeps the base's key.
+            key, basis = keys[str(s.id).removesuffix("_fixed")]
             if not (built := grader_prompt(mode, key, s)):
                 continue
             prompt, read = built
