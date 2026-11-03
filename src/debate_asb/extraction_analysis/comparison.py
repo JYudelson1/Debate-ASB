@@ -176,6 +176,8 @@ def load_variant(spec: dict, base: Path) -> tuple[dict, list[dict]]:
                 "sample_id": sample["id"],
                 "epoch": sample["epoch"],
                 "parsed": parsed,
+                "honest_control": sample.get("target") == "honest",
+                "review_status": "reviewed",
                 "no_qualifying_evidence": no_candidates,
                 "investigation": sample.get("investigation"),
                 "extraction_recovery": sample.get("extraction_recovery"),
@@ -216,6 +218,8 @@ def load_variant(spec: dict, base: Path) -> tuple[dict, list[dict]]:
         "id": spec["id"],
         "label": spec["label"],
         "historical": spec.get("historical", False),
+        "honest_control": bool(rows) and all(r["honest_control"] for r in rows),
+        "review_status": "reviewed",
         "settings": spec.get("settings", {}),
         **summarize(rows),
         "billed_cost": status.get("billed_total"),
@@ -346,8 +350,22 @@ def markdown(data: dict) -> str:
         "|---|---:|---:|---:|",
     ]
     for v in data["variants"]:
+        capture = (
+            "Not applicable"
+            if v.get("honest_control")
+            else "Unreviewed"
+            if v.get("review_status") == "unreviewed"
+            else f"{v['presence']}/{v['eligible']}"
+        )
+        completeness = (
+            "Not applicable"
+            if v.get("honest_control")
+            else "Unreviewed"
+            if v.get("review_status") == "unreviewed"
+            else f"{v['complete']}/{v['sufficiency_eligible']}"
+        )
         lines.append(
-            f"| {cell(v['label'])} | {v['presence']}/{v['eligible']} | {v['complete']}/{v['sufficiency_eligible']} | {v['parsed']}/{v['attempts']} |"
+            f"| {cell(v['label'])} | {capture} | {completeness} | {v['parsed']}/{v['attempts']} |"
         )
     lines += [
         "",
@@ -385,6 +403,11 @@ def markdown(data: dict) -> str:
 
 def build_report(config_path: Path, out: Path) -> dict:
     data = build_data(config_path.resolve())
+    return render_data(data, out)
+
+
+def render_data(data: dict, out: Path) -> dict:
+    """Render saved comparison data, including explicitly unreviewed evidence."""
     out.mkdir(parents=True, exist_ok=True)
     # Escape raw-text HTML terminators, including adversarial artifact contents.
     payload = (
