@@ -207,6 +207,18 @@ RETRIED_STOP_REASONS = {"unknown", "max_tokens"}
 
 
 OUT_OF_TOOL_CALLS = "You are out of tool calls. Give your answer now."
+TOOL_CALL_WRITTEN_AS_TEXT = (
+    "Your last message contains a tool call written as text, so nothing was run. "
+    "Call the tool, or give your final answer."
+)
+TEXT_TOOL_CALL_NUDGES = 2  # per loop; after that the text stands as the answer
+
+# A tool call written into the reply instead of made, which would otherwise end the
+# loop as the answer (GPT-5.2 in 13 of 80 judgments in E08): JSON arguments at the
+# start, or OpenAI's tool-call channel syntax anywhere.
+_TEXT_TOOL_CALL = re.compile(
+    r'^\s*\{"(path|command|pattern|directory|tool_uses)"|to=functions\.|"recipient_name"'
+)
 
 
 async def agent_loop(
@@ -220,15 +232,29 @@ async def agent_loop(
     """Let the participant call tools until it stops, runs out of steps, or spends max_cost.
 
     max_cost is nominal USD for this loop. Returns the participant's final text.
+    A reply that writes a tool call as text instead of making it gets
+    TOOL_CALL_WRITTEN_AS_TEXT and the loop goes on, using a step.
     """
     spent = 0.0
-    for _ in range(max_steps):
+    nudges = 0
+    for step in range(max_steps):
         output = await _generate_with_tool_history_recovery(
             participant, role, messages, tools
         )
         spent += participant.model.price().cost(output.usage)
         if not output.message.tool_calls:
-            return output.completion
+            if not (
+                tools
+                and nudges < TEXT_TOOL_CALL_NUDGES
+                and _TEXT_TOOL_CALL.search(output.completion)
+            ):
+                return output.completion
+            note("tool_call_written_as_text", role=role)
+            if step == max_steps - 1 or spent >= max_cost:
+                break  # no budget left to make the call: ask for the answer below
+            nudges += 1
+            messages.append(ChatMessageUser(content=TOOL_CALL_WRITTEN_AS_TEXT))
+            continue
         tool_messages, _ = await execute_tools(messages, tools)
         messages.extend(tool_messages)
         if spent >= max_cost:
