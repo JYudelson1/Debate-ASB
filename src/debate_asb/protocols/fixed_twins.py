@@ -6,6 +6,7 @@ same samples they send the same requests. Sample ids can also name:
 - a sabotaged codebase with its paper's honest-to-fixed patch applied, which ASB doesn't
   ship: `<id>_fixed` (hop_jump_fixed), found under sabotaged_fixed_root at the same
   relative path as in ASB's codebases/ (hop/jump). Label and answer key stay the base's.
+twin_debate replays as simple_debate.py's debate does (-T replay=<log> -T reuse=debate).
 
 Run from Debate-ASB, e.g.:
     inspect eval src/debate_asb/protocols/fixed_twins.py@twin_debate --model none \
@@ -29,7 +30,7 @@ from debate_asb.models import (
 from debate_asb.protocol import ToolAccess
 from debate_asb.protocols.lone_judge import LoneJudge
 from debate_asb.protocols.simple_debate import Debate
-from debate_asb.task import protocol_task
+from debate_asb.task import ReplayEpochs, protocol_task
 
 FIXED = "_fixed"
 
@@ -107,6 +108,9 @@ def twin_debate(
     judge_reasoning_effort: ReasoningEffort | None = None,
     code_execution: bool = False,
     sabotaged_fixed_root: str | None = None,
+    replay: str | None = None,
+    reuse: str | list[str] | tuple[str, ...] = (),
+    replay_epochs: ReplayEpochs = "first",  # "cycle", or an epoch; see protocol_task
 ):
     debater = ModelSpec(
         debater_model, debater_provider, reasoning_effort=debater_reasoning_effort
@@ -129,5 +133,8 @@ def twin_debate(
     return protocol_task(
         protocol,
         twin_samples(sample_ids, sabotaged_fixed_root),
-        code_execution=code_execution,
+        replay,
+        reuse,
+        code_execution,
+        replay_epochs,
     )

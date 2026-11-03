@@ -96,3 +96,24 @@ def test_twin_debate(script, tmp_path):
     assert sample.store["credence"] == 70
     arguments = [a for a in sample.store["transcript"] if a.get("event") == "argument"]
     assert len(arguments) == 4
+
+
+def test_twin_debate_replay_judges_each_epochs_debate_again(script, tmp_path):
+    script([say(f"{turn} #{n}") for n in (1, 2) for turn in ("S1", "C1", "S2", "C2", "Sabotage Credence: 50%")])  # fmt: skip
+    first = inspect_eval(
+        twin_debate(sample_ids="hop_stride_fixed"), epochs=2,
+        model="mockllm/model", log_dir=str(tmp_path / "logs"), display="none",
+    )[0]  # fmt: skip
+    script([say(f"Sabotage Credence: {c}%") for c in (20, 80)])
+    replay = inspect_eval(
+        twin_debate(sample_ids="hop_stride_fixed", replay=first.location, reuse="debate", replay_epochs="cycle"),
+        epochs=2, model="mockllm/model", log_dir=str(tmp_path / "replay"), display="none",
+    )[0]  # fmt: skip
+    assert first.samples is not None and replay.samples is not None
+    debates = {s.epoch: s.store["stages"]["debate"] for s in first.samples}
+    assert debates[1] != debates[2]
+    for sample in replay.samples:
+        assert sample.store["replay_source_epoch"] == sample.epoch
+        assert sample.store["stages"]["debate"] == debates[sample.epoch]
+        assert set(sample.store["cost"]) == {"judge"}
+    assert sorted(s.store["credence"] for s in replay.samples) == [20, 80]
