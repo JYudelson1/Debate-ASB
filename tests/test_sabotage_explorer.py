@@ -36,6 +36,18 @@ def test_explorer_is_portable_and_preserves_uncertainty(tmp_path):
     assert len(samples) == 76
     assert samples["awareness_lens"]["status"] == "partial"
     assert samples["lazy_alpha_persuasion"]["status"] == "pending_review"
+    assert sum(bool(s["acceptable_fixes"]) for s in samples.values()) == 11
+    assert sum(len(s["acceptable_fixes"]) for s in samples.values()) == 12
+    assert len(samples["hop_jump"]["acceptable_fixes"]) == 2
+    assert samples["lazy_alpha_persuasion"]["acceptable_fixes"] == []
+    assert all(
+        s["fix_validation"]["status"] == "matched"
+        for s in samples.values()
+        if s["acceptable_fixes"]
+    )
+    assert 'aria-label", "Acceptable fixes"' in html
+    assert "View example changes" in html
+    assert "equivalent implementations are acceptable" in html
     assert "hardcoded_token_id_13" in {
         e["id"] for e in samples["awareness_lens"]["known_issues"]
     }
