@@ -2,6 +2,7 @@
 const DATA = JSON.parse(document.getElementById("report-data").textContent);
 const $ = id => document.getElementById(id);
 const esc = x => String(x ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]));
+const unreviewed = DATA.variants.some(v=>v.review_status==="unreviewed");
 const pct = (x, n) => n ? (100*x/n).toFixed(1)+"%" : "—";
 const money = x => x == null ? "Unknown" : "$"+x.toFixed(3);
 const ratio = (x, n) => `${x}/${n} <small>(${pct(x,n)})</small>`;
@@ -17,22 +18,23 @@ $("meta").innerHTML = `<span><strong>${variants.length} variants</strong></span>
 $("designrows").innerHTML = variants.map(v => `<tr><td>${esc(v.label)}</td><td>${v.historical ? "Historical" : "New run"}</td><td>${Object.entries(v.settings).map(([k,x]) => `${esc(k)}: ${esc(typeof x === "object" ? JSON.stringify(x) : x)}`).join("<br>") || "See saved provenance"}</td></tr>`).join("");
 $("prompts").innerHTML = variants.filter(v => v.prompt).map(v => `<details><summary>${esc(v.label)} · saved prompt</summary><pre>${esc(v.prompt)}</pre></details>`).join("");
 $("bars").innerHTML = variants.map(v => {
+  if(v.review_status === "unreviewed" || v.honest_control) return `<div class="barrow"><div class="barlabel">${esc(v.label)}</div><div class="bar" role="img" aria-label="${v.parsed} accepted, ${v.failed} output failures; ${v.honest_control?"honest controls, target capture not applicable":"semantic review unassigned"}"><span style="width:${100*v.parsed/v.attempts}%;background:#b8c9da" title="${v.parsed} accepted extractions; ${v.honest_control?"unsabotaged controls":"unreviewed"}"></span><span class="failed" style="width:${100*v.failed/v.attempts}%" title="${v.failed} output failures"></span></div><strong>${v.parsed}/${v.attempts}</strong></div>`;
   const groups = [[v.complete,"complete"],[v.presence-v.complete,"present"],[v.partial,"partial"],[v.attempts-v.presence-v.partial-v.failed,"miss"],[v.failed,"fail"]];
   return `<div class="barrow"><div class="barlabel">${esc(v.label)}</div><div class="bar" role="img" aria-label="${esc(v.label)}: ${v.presence} captured, ${v.complete} complete, ${v.failed} failed out of ${v.attempts}">${groups.map(([n,c]) => `<span class="${c}" style="width:${v.attempts ? 100*n/v.attempts : 0}%" title="${n} ${c}"></span>`).join("")}</div><strong>${pct(v.presence,v.attempts)}</strong></div>`;
 }).join("");
-$("resultrows").innerHTML = variants.map(v => `<tr><td><strong>${esc(v.label)}</strong>${v.historical ? "<small> · historical</small>" : ""}</td><td>${ratio(v.presence,v.eligible)}</td><td>${ratio(v.complete,v.sufficiency_eligible)}</td><td>${ratio(v.presence,v.attempts)}</td><td>${v.parsed}/${v.attempts}</td><td>${v.excluded}</td></tr>`).join("");
+$("resultrows").innerHTML = variants.map(v => `<tr><td><strong>${esc(v.label)}</strong>${v.historical ? "<small> · historical</small>" : ""}</td><td>${v.honest_control?"Not applicable":v.review_status==="unreviewed"?"Unreviewed":ratio(v.presence,v.eligible)}</td><td>${v.honest_control?"Not applicable":v.review_status==="unreviewed"?"Unreviewed":ratio(v.complete,v.sufficiency_eligible)}</td><td>${v.honest_control?"Not applicable":v.review_status==="unreviewed"?"Unreviewed":ratio(v.presence,v.attempts)}</td><td>${v.parsed}/${v.attempts}</td><td>${v.excluded}</td></tr>`).join("");
 $("comparisons").innerHTML = DATA.comparisons.map(c => {
   const a = variants.find(v=>v.id===c.baseline), b = variants.find(v=>v.id===c.variant);
   const delta = c.jointly_reviewed_slots ? 100*(c.variant_presence-c.baseline_presence)/c.jointly_reviewed_slots : null;
   return `<p><strong>${esc(b.label)} vs ${esc(a.label)}:</strong> ${c.variant_presence}/${c.jointly_reviewed_slots} vs ${c.baseline_presence}/${c.jointly_reviewed_slots} captures on jointly reviewed slots${delta==null ? "" : ` (${delta>=0?"+":""}${delta.toFixed(1)} percentage points)`}. ${c.common_slots} slots share sample and epoch labels.</p>`;
 }).join("");
 $("notes").innerHTML = DATA.notes.map(x=>`<li>${esc(x)}</li>`).join("");
-$("retentionflow").innerHTML = variants.map(v=>`<article class="strategy"><h3>${esc(v.label)}</h3><div class="flow"><span>${v.reviewed_exposure} exposures</span><i>→</i><span>${v.presence} retained</span><i>→</i><span>${v.complete} complete</span></div><p>${v.exposed_dropped} reviewed outputs expose the target but retain only related clues or miss it.</p></article>`).join("");
+$("retentionflow").innerHTML = variants.map(v=>(v.review_status==="unreviewed"||v.honest_control)?`<article class="strategy"><h3>${esc(v.label)}</h3><p>${v.parsed}/${v.attempts} accepted extractions. ${v.honest_control?"Target exposure and capture are not applicable to honest controls.":"Exposure and target retention have not been reviewed."}</p></article>`:`<article class="strategy"><h3>${esc(v.label)}</h3><div class="flow"><span>${v.reviewed_exposure} exposures</span><i>→</i><span>${v.presence} retained</span><i>→</i><span>${v.complete} complete</span></div><p>${v.exposed_dropped} reviewed outputs expose the target but retain only related clues or miss it.</p></article>`).join("");
 $("retryrows").innerHTML = variants.map(v=>`<tr><td>${esc(v.label)}</td><td>${v.first_pass_parsed==null ? "Unknown" : v.first_pass_parsed+"/"+v.attempts}</td><td>${v.parsed}/${v.attempts}</td><td>${v.retry_attempts??"Unknown"}</td></tr>`).join("");
 $("matrixhead").innerHTML = `<tr><th>Codebase</th>${variants.map(v=>`<th>${esc(v.label)}</th>`).join("")}</tr>`;
 $("matrix").innerHTML = sampleIds.map(id=>`<tr><td><code>${esc(id)}</code></td>${variants.map(v=>{
   const s=v.by_sample[id];
-  return s ? `<td><button data-variant="${esc(v.id)}" data-sample="${esc(id)}"><span class="score"><strong>${s.presence}/${s.attempts}</strong><small>${s.complete} complete · ${s.parsed} parsed</small></span></button></td>` : "<td>—</td>";
+  return s ? `<td><button data-variant="${esc(v.id)}" data-sample="${esc(id)}"><span class="score"><strong>${v.honest_control?"Control":v.review_status==="unreviewed"?"Unreviewed":s.presence+"/"+s.attempts}</strong><small>${(v.review_status==="unreviewed"||v.honest_control)?s.parsed+"/"+s.attempts+" accepted":s.complete+" complete · "+s.parsed+" parsed"}</small></span></button></td>` : "<td>—</td>";
 }).join("")}</tr>`).join("");
 $("condition").innerHTML = variants.map(v=>`<option value="${esc(v.id)}">${esc(v.label)}</option>`).join("");
 function choices(id, values, previous) {
@@ -48,14 +50,25 @@ function updateEpochs() {
   choices("epoch",values,$("epoch").value); renderSample();
 }
 function selected() { return DATA.samples.find(s=>s.variant===$("condition").value&&s.sample_id===$("sample").value&&s.epoch===+$("epoch").value); }
+function targetRelation(sample, bundle) {
+  const review=sample.bundle_reviews[bundle.number];
+  if(sample.honest_control) return "not_applicable";
+  if(review.target_relation) return review.target_relation;
+  if(sample.review_status==="unreviewed") return "unreviewed";
+  if(sample.sufficient.includes(bundle.number)) return "complete";
+  if(sample.matching.includes(bundle.number)) return sample.included==="yes"?"present_incomplete":"related";
+  return "none";
+}
+const relationNames={complete:"Complete capture",present_incomplete:"Target present · incomplete",related:"Related clues only",none:"No target capture",not_applicable:"Not applicable · control",unknown:"Unknown",unreviewed:"Unreviewed"};
 function renderSample() {
   const s=selected();
   if(!s) { $("sampledetail").textContent="No saved extraction for this selection."; return; }
-  const filtered=s.bundles.filter(b=>(!$("targetonly").checked||s.matching.includes(b.number))&&($("bugfilter").value==="all"||s.bundle_reviews[b.number].bug_status===$("bugfilter").value)&&($("paperfilter").value==="all"||s.bundle_reviews[b.number].paper_alignment===$("paperfilter").value));
-  const state=!s.parsed?"Output failure":s.no_qualifying_evidence?"No qualifying evidence extracted":s.complete?"Complete target bundle":s.included==="yes"?"Target captured":s.included==="partial"?"Related clues only":s.included==="no"?"Target missed":s.included;
+  const filtered=s.bundles.filter(b=>(!$("targetonly").checked||s.matching.includes(b.number)||["complete","present_incomplete","related"].includes(targetRelation(s,b)))&&($("bugfilter").value==="all"||s.bundle_reviews[b.number].bug_status===$("bugfilter").value)&&($("paperfilter").value==="all"||s.bundle_reviews[b.number].paper_alignment===$("paperfilter").value));
+  const state=!s.parsed?"Output failure":s.honest_control?"Unsabotaged control":s.review_status==="unreviewed"?"Unreviewed extraction":s.no_qualifying_evidence?"No qualifying evidence extracted":s.complete?"Complete target bundle":s.included==="yes"?"Target captured":s.included==="partial"?"Related clues only":s.included==="no"?"Target missed":s.included;
   let h=`<div class="detail"><div class="detailtop"><h3><code>${esc(s.sample_id)}</code> · epoch ${s.epoch}</h3><span class="status">${esc(state)}</span></div><p class="bundleobs">${esc(s.summary)}</p><p class="fine"><strong>Exposure:</strong> ${esc(s.exposure)} · ${esc(s.exposure_summary)} · ${s.model_calls??"Unknown"} model calls · nominal cost ${money(s.nominal_cost)}</p>`;
   if(s.error) h+=`<details><summary>Recorded sample error</summary><pre>${esc(JSON.stringify(s.error,null,2))}</pre></details>`;
   if(s.extraction_recovery) h+=`<details><summary>Saved JSON adapter recovery</summary><pre>${esc(JSON.stringify(s.extraction_recovery,null,2))}</pre></details>`;
+  if(s.coordinator_details) h+=`<details><summary>Extraction plan, configuration and budget</summary><pre>${esc(JSON.stringify(s.coordinator_details,null,2))}</pre></details>`;
   if(s.investigation) {
     const a=s.investigation;
     h+=`<details><summary>Coordinator survey and handoff briefs</summary><pre>${esc(JSON.stringify(a.coordinator,null,2))}</pre></details>`;
@@ -65,12 +78,12 @@ function renderSample() {
     }
     if(s.no_qualifying_evidence) h+='<p>No qualifying evidence extracted. This does not establish codebase validity; this completed extraction remains in the denominator.</p>';
   }
-  h+=`<div class="tablewrap"><table><thead><tr><th>Bundle</th><th>Topic</th><th>Bug?</th><th>Viable candidate?</th><th>Paper</th></tr></thead><tbody>${filtered.map(b=>{
-    const r=s.bundle_reviews[b.number]; return `<tr><td>${b.number}${s.sufficient.includes(b.number)?" · complete":s.matching.includes(b.number)?" · target / related":""}</td><td>${esc(r.topic)}</td><td>${badge(r.bug_status)}</td><td>${badge(r.sabotage_candidate)}</td><td>${badge(r.paper_alignment)}</td></tr>`;
+  h+=`<div class="tablewrap"><table><thead><tr><th>Bundle</th><th>Target relation</th><th>Topic</th><th>Bug?</th><th>Viable candidate?</th><th>Paper</th></tr></thead><tbody>${filtered.map(b=>{
+    const r=s.bundle_reviews[b.number]; return `<tr><td>${b.number}${s.sufficient.includes(b.number)?" · complete":s.matching.includes(b.number)?" · target / related":""}</td><td>${esc(relationNames[targetRelation(s,b)])}</td><td>${esc(r.topic)}</td><td>${badge(r.bug_status)}</td><td>${badge(r.sabotage_candidate)}</td><td>${badge(r.paper_alignment)}</td></tr>`;
   }).join("")}</tbody></table></div>`;
   for(const b of filtered) {
     const r=s.bundle_reviews[b.number];
-    h+=`<details><summary>Bundle ${b.number} · ${esc(r.topic)}${s.sufficient.includes(b.number)?" · complete target":""}</summary><p class="bundleobs"><strong>Observation:</strong> ${esc(b.observation)}</p><p class="fine"><strong>Review:</strong> ${esc(r.reason)}</p>${(b.known_issue_matches||[]).map(m=>`<details><summary>Catalogued ${esc(m.category)} · ${esc(m.match_kind)} · ${esc(m.title||m.id)}</summary><p>${esc(m.description)}</p><p class="fine">Annotated impact: ${esc(m.impact)}</p><pre>${esc(JSON.stringify(m.evidence,null,2))}</pre></details>`).join("")}${b.excerpts.map(ex=>`<p class="fine"><code>${esc(ex.path)}${ex.start_line==null&&ex.end_line==null?" (lines unavailable)":`:${ex.start_line??"?"}–${ex.end_line??"?"}`}${ex.source_location?` · ${esc(ex.source_location)}`:""}</code> · fidelity ${esc(ex.fidelity?.status??"unknown")}</p><pre>${esc(ex.text)}</pre>`).join("")}<details><summary>Checked code and paper bases</summary><pre>${esc(JSON.stringify(r.basis,null,2))}</pre></details></details>`;
+    h+=`<details><summary>Bundle ${b.number} · ${esc(r.topic)}${s.sufficient.includes(b.number)?" · complete target":""}</summary><p class="bundleobs"><strong>Observation:</strong> ${esc(b.observation)}</p><p class="fine"><strong>Target relation:</strong> ${esc(relationNames[targetRelation(s,b)])} · ${esc(r.target_reason||"")}</p><p class="fine"><strong>Review:</strong> ${esc(r.reason)}</p>${(b.known_issue_matches||[]).map(m=>`<details><summary>Catalogued ${esc(m.category)} · ${esc(m.match_kind)} · ${esc(m.title||m.id)}</summary><p>${esc(m.description)}</p><p class="fine">Annotated impact: ${esc(m.impact)}</p><pre>${esc(JSON.stringify(m.evidence,null,2))}</pre></details>`).join("")}${b.excerpts.map(ex=>`<p class="fine"><code>${esc(ex.path)}${ex.start_line==null&&ex.end_line==null?" (lines unavailable)":`:${ex.start_line??"?"}–${ex.end_line??"?"}`}${ex.source_location?` · ${esc(ex.source_location)}`:""}</code> · fidelity ${esc(ex.fidelity?.status??"unknown")}</p><pre>${esc(ex.text)}</pre>`).join("")}<details><summary>Checked code and paper bases</summary><pre>${esc(JSON.stringify(r.basis,null,2))}</pre></details></details>`;
   }
   if(!filtered.length&&s.parsed&&!s.no_qualifying_evidence) h+='<p class="empty">No bundles match these filters.</p>';
   h+=`<details><summary>Checked target and limitations</summary><pre>${esc(JSON.stringify(s.reference,null,2))}</pre><p class="fine">${esc(s.review_note)}</p></details><details><summary>Executed tool sequence · ${s.tools.length} calls</summary>${s.tools.map(t=>`<details><summary>${t.ordinal}. ${esc(t.function)} ${esc(JSON.stringify(t.arguments))}${t.failed?" · failed":""}</summary><pre>${esc(t.result)}</pre></details>`).join("")}</details></div>`;
@@ -104,3 +117,18 @@ $("download").addEventListener("click",()=>{
   const a=document.createElement("a");a.href=url;a.download="extraction-report.html";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
 updateSamples();
+
+if(unreviewed) {
+  $("results").querySelector(".intro").textContent="Accepted extraction counts and output failures are shown below. Semantic capture and completeness remain unreviewed; honest controls have no target sabotage.";
+  $("bars").parentElement.querySelector(".legend").innerHTML='<span><b style="background:#b8c9da"></b>Accepted extraction · unreviewed</span><span><b style="background:#eed2d0"></b>Output failure</span>';
+  $("bars").parentElement.querySelector(".fine").textContent="Bars show accepted extractions out of all recorded slots. Unreviewed evidence and honest controls are not classified as target misses.";
+  $("cases").querySelector("h2").textContent="Extraction by codebase";
+  $("cases").querySelector(".intro").textContent="Each cell shows accepted extractions out of the three recorded epochs. Select a cell to inspect its evidence and inspection heatmap.";
+  for(const id of ["bugfilter","paperfilter"]) $(id).insertAdjacentHTML("beforeend",'<option value="unreviewed">Unreviewed</option>');
+  $("targetonly").disabled=true;
+  $("targetonly").parentElement.title="Target-bearing bundles have not been reviewed.";
+}
+
+if(!unreviewed && variants.some(v=>v.honest_control)) {
+  $("bars").parentElement.querySelector(".legend").insertAdjacentHTML("beforeend",'<span><b style="background:#b8c9da"></b>Accepted unsabotaged controls · capture not applicable</span>');
+}
