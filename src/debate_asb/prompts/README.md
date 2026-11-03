@@ -194,6 +194,19 @@ here), and "Running Code". Edits:
 `access_tools_execute_turn.md` (debaters, consultant) is NEW (ours): the same
 facts, condensed.
 
+## Agent loop messages (`protocol.py`)
+
+Two fixed user messages that `agent_loop` sends, in every setting, kept in
+`protocol.py` rather than in prompt files:
+
+- `OUT_OF_TOOL_CALLS`: "You are out of tool calls. Give your answer now.", sent
+  at the step or cost budget.
+- `TOOL_CALL_WRITTEN_AS_TEXT` (NEW, 2026-11-03): "Your last message contains a
+  tool call written as text, so nothing was run. Call the tool, or give your
+  final answer.", sent when a reply would end the loop but looks like a tool
+  call written as text, at most twice per loop. Why: GPT-5.2 did this in 13 of
+  80 judgments in E08, and the text became the answer.
+
 # Bounded validity question extraction (`asb/hypothesis_workers/`)
 
 The `asb/hypothesis_workers/coordinator.md` and `worker.md` templates are the
