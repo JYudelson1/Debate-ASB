@@ -412,6 +412,7 @@ dependencies = [
     { name = "openai" },
     { name = "pyarrow" },
     { name = "pyyaml" },
+    { name = "regex" },
     { name = "remotezip" },
 ]
 
@@ -430,6 +431,7 @@ requires-dist = [
     { name = "openai", specifier = ">=3.18.0" },
     { name = "pyarrow", specifier = ">=25.0.1" },
     { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "regex", specifier = ">=2026.9.10" },
     { name = "remotezip", specifier = ">=0.12.6" },
 ]
 
