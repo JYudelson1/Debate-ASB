@@ -137,7 +137,7 @@ class Codebase(Artifact):
             return f"Invalid regular expression: {error}"
         matches = []
         deadline = time.monotonic() + SEARCH_TIMEOUT_SECONDS
-        # A file given as the directory is searched itself; rglob finds no children.
+        # A file target is searched directly; rglob would otherwise find no children.
         target = self._resolve(directory)
         files = [target] if target.is_file() else self._files(target)
         for file in files:
