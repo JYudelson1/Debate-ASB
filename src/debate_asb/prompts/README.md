@@ -182,6 +182,20 @@ They are rendered once with Python `str.format`; their JSON outputs are adapted
 by `protocols/hypothesis_workers.py`. Both receive the existing ASB Blue Team
 Context. See `docs/hypothesis-workers.md` for routing and budget semantics.
 
+# Hypothesis slots (`asb/hypothesis_slots/`)
+
+Additions for `protocols/hypothesis_slots.py`, a lone judge with three
+hypothesis slots and a credence-only answer. The judge prompt is the base
+`judge.md` + `game_rules.md` without `judge_answer.md`.
+
+- `slots.md` is NEW (ours): the slot tools and rules, the budget, and when the
+  judge may stop. `{min_rule}` and `{stop_rule}` are filled by the protocol and
+  are empty or plain when there is no minimum spend.
+- `answer.md` is ADAPTED from `asb/judge_answer.md`: its Calibration section is
+  copied unchanged; the fixes section is removed, the self-consistency check
+  refers to the top slot instead of Fix 1, and the output format lists the
+  final slots and the credence.
+
 # MonitoringBench (`monitoringbench/`)
 
 All NEW (ours), deliberately not MonitoringBench's own monitor prompt, since
