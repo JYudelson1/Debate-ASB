@@ -190,7 +190,10 @@ hypothesis slots and a credence-only answer. The judge prompt is the base
 
 - `slots.md` is NEW (ours): the slot tools and rules, the budget, and when the
   judge may stop. `{min_rule}` and `{stop_rule}` are filled by the protocol and
-  are empty or plain when there is no minimum spend.
+  are empty or plain when there is no minimum spend; `{verify_rule}` announces
+  the verification phase and is empty when it is off. The verification turns
+  themselves (`VERIFY`, `RUN_CODE_FIRST`, `AFTER_VERIFY`) are NEW (ours) and
+  live in the protocol module.
 - `answer.md` is ADAPTED from `asb/judge_answer.md`: its Calibration section is
   copied unchanged; the fixes section is removed, the self-consistency check
   refers to the top slot instead of Fix 1, and the output format lists the
