@@ -200,7 +200,6 @@ def check_openrouter_account() -> None:
         raise OpenRouterAccountError("OPENROUTER_API_KEY is not set (put it in .env).")
     try:
         key = _openrouter_get("/key", api_key)
-        credits = _openrouter_get("/credits", api_key)
     except urllib.error.HTTPError as e:
         raise OpenRouterAccountError(
             f"OpenRouter rejected the key: HTTP {e.code}"
@@ -211,6 +210,16 @@ def check_openrouter_account() -> None:
             f"This key has used its whole spend limit (${key['limit']}). "
             "Raise the limit or use another key."
         )
+    try:
+        credits = _openrouter_get("/credits", api_key)
+    except urllib.error.HTTPError as e:
+        if e.code != 403:
+            raise OpenRouterAccountError(
+                f"OpenRouter rejected the key: HTTP {e.code}"
+            ) from e
+        # Organization keys not created by an admin may not read the org's credits;
+        # the key's own limit (checked above) is then the only pre-run check.
+        return
     balance = credits["total_credits"] - credits["total_usage"]
     if balance <= 0:
         raise OpenRouterAccountError(
