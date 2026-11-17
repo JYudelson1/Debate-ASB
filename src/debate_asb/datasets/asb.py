@@ -3,8 +3,17 @@
 Each sample carries one artifact, the codebase (its PAPER.md included), plus a
 label (honest/sabotaged) and, for sabotaged samples, ASB's answer key. Neither
 the label nor the answer key reaches protocols; only scoring sees them.
+
+A few samples ship with files that don't match their own saved results. For
+those, the sample points to a patched copy (data/asb_patched/<id>/) with the
+right files laid over it, all taken from ASB itself (see PATCHES and
+docs/asb-known-issues.md).
 """
 
+import hashlib
+import os
+import shutil
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -35,6 +44,54 @@ CORE_SAMPLE_IDS = [
     "negative_hush", "negative_mute",
     "preference_dolphin", "preference_lion",
 ]  # fmt: skip
+
+
+# Files to lay over a sample's codebase: {sample id: {path in the codebase: path in ASB}}.
+PATCHES: dict[str, dict[str, str]] = {
+    # chain_justification ships a monitor prompt file in which only the action
+    # prompt is sabotaged. Its own saved monitor logs, results and rubric
+    # ("Appendix B", CoT-prompt fixes) were made with both prompts sabotaged:
+    # the file ASB ships in justification_persuasion. That file reproduces all
+    # saved prompts exactly; rerunning with it reproduces the paper's table.
+    "chain_justification": {
+        "src/cot_red_handed/monitor/prompts/monitor_prompt_1.yaml": (
+            "codebases/chain/justification_persuasion/"
+            "src/cot_red_handed/monitor/prompts/monitor_prompt_1.yaml"
+        ),
+    },
+}
+PATCHED_ROOT = PROJECT_ROOT / "data" / "asb_patched"
+
+
+def _workspace(sample_id: str, workspace: str) -> Path:
+    """The codebase directory for a sample: ASB's own, or a patched copy of it."""
+    original = ASB_ROOT / workspace
+    patches = PATCHES.get(sample_id)
+    if not patches:
+        return original
+    # Rebuild the copy whenever the patch or its source files change.
+    stamp = hashlib.sha256(
+        b"".join(
+            path.encode() + (ASB_ROOT / source).read_bytes()
+            for path, source in sorted(patches.items())
+        )
+    ).hexdigest()
+    target = PATCHED_ROOT / sample_id
+    marker = target / ".asb_patch"
+    if marker.exists() and marker.read_text() == stamp:
+        return target
+    # Build in a temporary directory and rename, so concurrent runs never see
+    # a half-built copy.
+    PATCHED_ROOT.mkdir(parents=True, exist_ok=True)
+    build = Path(tempfile.mkdtemp(dir=PATCHED_ROOT, prefix=f".{sample_id}-"))
+    shutil.copytree(original, build, dirs_exist_ok=True, symlinks=True)
+    for path, source in patches.items():
+        shutil.copyfile(ASB_ROOT / source, build / path)
+    (build / ".asb_patch").write_text(stamp)
+    if target.exists():
+        shutil.rmtree(target)
+    os.replace(build, target)
+    return target
 
 
 def asb_samples(sample_ids: list[str] = CORE_SAMPLE_IDS) -> list[Sample]:
@@ -81,7 +138,9 @@ def asb_samples(sample_ids: list[str] = CORE_SAMPLE_IDS) -> list[Sample]:
                 metadata={
                     "setting": "asb",
                     "artifacts": {
-                        "codebase": {"root": str(ASB_ROOT / entry["workspace"])}
+                        "codebase": {
+                            "root": str(_workspace(sample_id, entry["workspace"]))
+                        }
                     },
                     "paper_name": rubric.get("paper_name"),
                     # The answer key. Never shown to participants.
