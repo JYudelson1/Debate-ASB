@@ -34,6 +34,8 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 88
 target-version = "py312"
+# ASB's own files, kept byte for byte (corrections/manifest.json holds their hashes).
+extend-exclude = ["corrections"]
 
 [tool.ruff.lint]
 select = ["I"]

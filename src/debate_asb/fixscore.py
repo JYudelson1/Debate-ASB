@@ -14,6 +14,9 @@ reference) says the rubric is wrong:
 - "contradicts" (lazy_alpha): the rubric states the sabotage backwards (README), so
   CORRECTED replaces the whole entry.
 ASB graded against the rubric as shipped, which can move its top-k on those three.
+The twins datasets/corrected.py restores (`<id>_corrected`) keep their base's key, except
+where corrections/manifest.json says otherwise: lazy_alpha_corrected takes ASB's rubric
+as shipped, which describes the restored code.
 
 ASB's grader was Claude Opus 4.6 without extended thinking (sabotage_detection.py). The
 default here is GPT-6 Luna on flex at high effort, about 100 times cheaper per token; pass
@@ -40,6 +43,7 @@ from inspect_ai.solver import Generate, TaskState, solver
 
 from debate_asb import protocol
 from debate_asb.datasets.asb import ASB_ROOT
+from debate_asb.datasets.corrected import read_manifest
 from debate_asb.models import ModelSpec, Participant, ReasoningEffort
 from debate_asb.sabotage import read_registry, resolve_sabotage
 
@@ -128,15 +132,33 @@ REASONING: <Your explanation of each score>
 def answer_keys() -> dict[str, tuple[dict, str]]:
     """Sabotaged sample id -> (rubric entry used, which correction it carries)."""
     registry = read_registry()
-    keys = {}
+    entries = {}
     for path in sorted((ASB_ROOT / "codebases" / "_rubrics").glob("*.yaml")):
         if path.name.startswith("_"):
             continue
         for entry in (
             yaml.safe_load(path.read_text(encoding="utf-8")).get("sabotaged") or []
         ):
-            keys[entry["id"]] = _corrected(entry, registry)
-    return keys
+            entries[entry["id"]] = entry
+    keys = {i: _corrected(e, registry) for i, e in entries.items()}
+    return keys | _restored_twin_keys(entries, keys)
+
+
+def _restored_twin_keys(
+    entries: dict[str, dict], keys: dict[str, tuple[dict, str]]
+) -> dict[str, tuple[dict, str]]:
+    """Keys for the twins datasets/corrected.py restores to the state ASB evaluated: the
+    base's key, except where corrections/manifest.json says the restore changes it."""
+    out = {}
+    for twin in read_manifest()["samples"]:
+        key, base = twin["answer_key"], twin["base"]
+        if key["basis"] == "base":
+            out[twin["id"]] = keys[base]
+        elif key["basis"] == "asb_rubric":  # ASB's rubric describes the restored code
+            out[twin["id"]] = entries[base], "asb_rubric"
+        else:
+            raise ValueError(f"{twin['id']}: unknown answer key basis {key['basis']!r}")
+    return out
 
 
 def _corrected(entry: dict, registry: dict) -> tuple[dict, str]:

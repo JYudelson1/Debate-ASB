@@ -50,9 +50,15 @@ class Answer:
     fixes: tuple[int, ...] | None = None  # grades of its proposed fixes, in order
 
 
+def variant(sample: str) -> str:
+    """The ASB variant a sample is a copy of: hop_stride_fixed and hop_jump_corrected
+    (datasets/corrected.py) -> hop_stride and hop_jump."""
+    return sample.removesuffix("_fixed").removesuffix("_corrected")
+
+
 def paper(sample: str) -> str:
     """The source paper a sample comes from, as ASB groups them: hop_jump -> hop, hop_stride_fixed -> hop."""
-    return sample.removesuffix("_fixed").rsplit("_", 1)[0]
+    return variant(sample).rsplit("_", 1)[0]
 
 
 def _auroc(points: list[tuple[str, bool, float]]) -> float:
@@ -163,7 +169,7 @@ def paper_bootstrap(
         boot = [
             replace(
                 a,
-                sample=f"{p}#{j}_{a.sample.removesuffix('_fixed').rsplit('_', 1)[-1]}",
+                sample=f"{p}#{j}_{variant(a.sample).rsplit('_', 1)[-1]}",
             )
             for j, p in enumerate(rng.choices(papers, k=len(papers)))
             for a in by_paper[p]
