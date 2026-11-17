@@ -1,5 +1,7 @@
 """ModelSpec pinning rules, checked against a canned OpenRouter endpoints listing."""
 
+import urllib.error
+from email.message import Message
 from typing import cast
 
 import pytest
@@ -95,6 +97,40 @@ def test_reasoning_effort_reaches_the_request(monkeypatch, effort):
 def test_no_reasoning_effort_sends_none(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "offline")
     assert "reasoning" not in request_body(ModelSpec("m", "google-ai-studio"))
+
+
+def account_replies(monkeypatch, key, credits):
+    """Make OpenRouter answer /key and /credits with these; an int is an HTTP error status."""
+
+    def get(path, api_key=None):
+        reply = {"/key": key, "/credits": credits}[path]
+        if isinstance(reply, int):
+            raise urllib.error.HTTPError(path, reply, "", Message(), None)
+        return reply
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline")
+    monkeypatch.setattr(models, "_openrouter_get", get)
+
+
+def test_account_check_passes_when_the_key_may_not_read_the_balance(monkeypatch):
+    account_replies(monkeypatch, {"limit": 80, "limit_remaining": 80}, 403)
+    models.check_openrouter_account()
+
+
+def test_account_check_still_stops_on_a_rejected_key_a_spent_limit_or_no_credit(
+    monkeypatch,
+):
+    account_replies(monkeypatch, 401, 403)
+    with pytest.raises(models.OpenRouterAccountError, match="rejected the key"):
+        models.check_openrouter_account()
+    account_replies(monkeypatch, {"limit": 80, "limit_remaining": 0}, 403)
+    with pytest.raises(models.OpenRouterAccountError, match="spend limit"):
+        models.check_openrouter_account()
+    account_replies(
+        monkeypatch, {"limit": None}, {"total_credits": 5, "total_usage": 5}
+    )
+    with pytest.raises(models.OpenRouterAccountError, match="no credit left"):
+        models.check_openrouter_account()
 
 
 def test_tools_are_sent_without_strict_mode(monkeypatch):

@@ -191,7 +191,9 @@ def check_openrouter_account() -> None:
     """Fail fast, before any samples run, if the OpenRouter key can't pay for calls.
 
     Checks the key is set and accepted, the key's own spend limit isn't used up,
-    and the account has credit left. Mid-run exhaustion is still possible; the
+    and the account has credit left. The last is skipped for a key that may not
+    read the balance: OpenRouter answers 403 on /credits to a key made by a
+    non-admin member of an organization. Mid-run exhaustion is still possible; the
     run then stops on the first 402, and `inspect eval-retry <log>` resumes it
     (completed model calls replay from the disk cache for free).
     """
@@ -200,17 +202,26 @@ def check_openrouter_account() -> None:
         raise OpenRouterAccountError("OPENROUTER_API_KEY is not set (put it in .env).")
     try:
         key = _openrouter_get("/key", api_key)
-        credits = _openrouter_get("/credits", api_key)
     except urllib.error.HTTPError as e:
         raise OpenRouterAccountError(
             f"OpenRouter rejected the key: HTTP {e.code}"
         ) from e
-
     if key.get("limit") is not None and key.get("limit_remaining", 1) <= 0:
         raise OpenRouterAccountError(
             f"This key has used its whole spend limit (${key['limit']}). "
             "Raise the limit or use another key."
         )
+
+    try:
+        credits = _openrouter_get("/credits", api_key)
+    except urllib.error.HTTPError as e:
+        if (
+            e.code == 403
+        ):  # the key was accepted above; only the balance is closed to it
+            return
+        raise OpenRouterAccountError(
+            f"OpenRouter rejected the key: HTTP {e.code}"
+        ) from e
     balance = credits["total_credits"] - credits["total_usage"]
     if balance <= 0:
         raise OpenRouterAccountError(
