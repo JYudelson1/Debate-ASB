@@ -46,8 +46,26 @@ LOST_SABOTAGE_SAMPLE_IDS = [
     for i in CORE_SAMPLE_IDS
 ]
 
-# Names usable in place of ids, e.g. -T sample_ids=lost_sabotage.
-SAMPLE_SETS = {"core": CORE_SAMPLE_IDS, "lost_sabotage": LOST_SABOTAGE_SAMPLE_IDS}
+# The core set with every sabotaged twin as ASB evaluated it: the honest originals, the
+# five twins nothing changed after evaluation, and the six corrected ones.
+CORRECTED_SAMPLE_IDS = [
+    "awareness_lens_corrected", "awareness_prism",
+    "chain_justification_corrected", "chain_output",
+    "diffuse_fox", "diffuse_owl_corrected",
+    "hidden_cat", "hidden_green",
+    "hop_double_corrected", "hop_jump_corrected", "hop_stride",
+    "lazy_alpha_corrected", "lazy_dimension",
+    "multi_ant", "multi_gem", "multi_pen",
+    "negative_hush", "negative_mute",
+    "preference_dolphin", "preference_lion",
+]  # fmt: skip
+
+# Names usable in place of ids, e.g. -T sample_ids=corrected.
+SAMPLE_SETS = {
+    "core": CORE_SAMPLE_IDS,
+    "lost_sabotage": LOST_SABOTAGE_SAMPLE_IDS,
+    "corrected": CORRECTED_SAMPLE_IDS,
+}
 
 
 def expand_sample_ids(sample_ids: list[str]) -> list[str]:

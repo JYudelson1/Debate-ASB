@@ -14,6 +14,7 @@ from inspect_ai.dataset import Sample
 from debate_asb.datasets.asb import (
     ASB_ROOT,
     CORE_SAMPLE_IDS,
+    CORRECTED_SAMPLE_IDS,
     LOST_SABOTAGE_SAMPLE_IDS,
     asb_samples,
     expand_sample_ids,
@@ -38,6 +39,7 @@ def load_samples(
 __all__ = [
     "ASB_ROOT",
     "CORE_SAMPLE_IDS",
+    "CORRECTED_SAMPLE_IDS",
     "LOST_SABOTAGE_SAMPLE_IDS",
     "asb_samples",
     "expand_sample_ids",

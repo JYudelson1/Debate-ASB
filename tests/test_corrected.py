@@ -13,6 +13,7 @@ from inspect_ai.log import read_eval_log
 from debate_asb.datasets import (
     ASB_ROOT,
     CORE_SAMPLE_IDS,
+    CORRECTED_SAMPLE_IDS,
     LOST_SABOTAGE_SAMPLE_IDS,
     asb_samples,
     expand_sample_ids,
@@ -66,6 +67,16 @@ def test_lost_sabotage_set_is_the_core_set_with_two_twins_restored():
     ] == CORE_SAMPLE_IDS
 
 
+def test_corrected_set_is_the_core_set_with_six_twins_restored():
+    assert expand_sample_ids(["corrected"]) == CORRECTED_SAMPLE_IDS
+    restored = [i for i in CORRECTED_SAMPLE_IDS if i.endswith("_corrected")]
+    assert restored == sorted(e["id"] for e in read_manifest()["samples"])
+    assert len(restored) == 6
+    assert sorted(i.removesuffix("_corrected") for i in CORRECTED_SAMPLE_IDS) == sorted(
+        CORE_SAMPLE_IDS
+    )
+
+
 def test_corrected_id_loads_its_restored_copy(built):
     lazy, honest = asb_samples([LAZY, "lazy_dimension"])
     [base] = asb_samples(["lazy_alpha"])
@@ -114,10 +125,15 @@ def test_built_copy_matches_the_manifest(built):
     assert tree_sha256(root) != entry["shipped_tree_sha256"]
 
 
-def test_corrected_id_shares_its_paper():
+def test_corrected_ids_share_their_paper_and_stay_apart():
     assert paper(LAZY) == paper("lazy_alpha") == "lazy"
-    answers = [Answer(LAZY, 1, True, 60.0), Answer("lazy_dimension", 1, False, 40.0)]
-    assert paper_bootstrap(lambda a: len({x.sample for x in a}), answers, 5) == (2, 2)
+    assert paper("hop_jump_corrected") == "hop"
+    answers = [
+        Answer("hop_jump_corrected", 1, True, 60.0),
+        Answer("hop_double_corrected", 1, True, 70.0),
+        Answer("hop_stride", 1, False, 40.0),
+    ]
+    assert paper_bootstrap(lambda a: len({x.sample for x in a}), answers, 5) == (3, 3)
 
 
 def test_answer_keys_of_corrected_twins():
@@ -127,6 +143,9 @@ def test_answer_keys_of_corrected_twins():
     key, basis = keys[LAZY]
     assert basis == "asb_rubric"
     assert "line 58" in key["sabotage"]["description"]
+    key, basis = keys["hop_jump_corrected"]
+    assert basis == "relocated"
+    assert "generate.py:792-798" in key["sabotage"]["location"]
     assert keys["chain_justification_corrected"] == keys["chain_justification"]
 
 

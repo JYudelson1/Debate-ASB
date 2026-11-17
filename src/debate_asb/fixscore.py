@@ -16,7 +16,8 @@ reference) says the rubric is wrong:
 ASB graded against the rubric as shipped, which can move its top-k on those three.
 The twins datasets/corrected.py restores (`<id>_corrected`) keep their base's key, except
 where corrections/manifest.json says otherwise: lazy_alpha_corrected takes ASB's rubric
-as shipped, which describes the restored code.
+as shipped, which describes the restored code; hop_jump_corrected the registry's
+locations found again in its corrected file.
 
 ASB's grader was Claude Opus 4.6 without extended thinking (sabotage_detection.py). The
 default here is GPT-6 Luna on flex at high effort, about 100 times cheaper per token; pass
@@ -156,6 +157,8 @@ def _restored_twin_keys(
             out[twin["id"]] = keys[base]
         elif key["basis"] == "asb_rubric":  # ASB's rubric describes the restored code
             out[twin["id"]] = entries[base], "asb_rubric"
+        elif key["basis"] == "relocated":  # the registry's locations, found again
+            out[twin["id"]] = _relocated(entries[base], key["locations"]), "relocated"
         else:
             raise ValueError(f"{twin['id']}: unknown answer key basis {key['basis']!r}")
     return out
@@ -172,21 +175,23 @@ def _corrected(entry: dict, registry: dict) -> tuple[dict, str]:
             entry["id"]
         ], "corrected"  # KeyError: write its correction first
     if relation == "relocated":
-        location = "; ".join(
-            f"{loc['path']}"
-            + (
-                ""
-                if loc["start_line"] is None
-                else f":{loc['start_line']}-{loc['end_line']}"
-            )
-            + f" ({loc['role']})"
-            for loc in record["locations"]
-        )
-        return {
-            **entry,
-            "sabotage": {**entry["sabotage"], "location": location},
-        }, "relocated"
+        return _relocated(entry, record["locations"]), "relocated"
     return entry, "asb_rubric"
+
+
+def _relocated(entry: dict, locations: list[dict]) -> dict:
+    """The rubric entry with its location replaced by these checked locations."""
+    location = "; ".join(
+        f"{loc['path']}"
+        + (
+            ""
+            if loc["start_line"] is None
+            else f":{loc['start_line']}-{loc['end_line']}"
+        )
+        + f" ({loc['role']})"
+        for loc in locations
+    )
+    return {**entry, "sabotage": {**entry["sabotage"], "location": location}}
 
 
 def log_paths(logs: str | list[str]) -> list[Path]:
