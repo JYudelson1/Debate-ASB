@@ -36,7 +36,29 @@ Status: **fixed here** (`PATCHES` in `src/debate_asb/datasets/asb.py`).
   codebase (`data/asb_patched/chain_justification/`) with the persuasion
   variant's prompt file. Nothing else changes; the file comes from ASB.
 
-## 2. chain_output_fixed: saved logs not regenerated, benign data missing
+## 2. diffuse_fox ships a reliable_questions.json that doesn't match its cached generations
+
+Status: **fixed here** (`PATCHES` in `src/debate_asb/datasets/asb.py`).
+
+- `diffuse/fox/experiments/gemma-3-12b/reliable_questions.json` (6,178
+  reliable questions) is not the file fox's cached generations and saved
+  results were made with; they were made with the 6,169-question file shipped
+  in `diffuse/owl`. `diffuse/original` ships the same mismatched file.
+- Because the file exists, `run_experiments.py` skips steps 1-2, loads these
+  questions (shuffled with seed 42) and pairs them by index with the cached
+  PASS-1 answers in `generations/lie_detector_part1/`.
+- With fox's file: 1/5000 prompts match their cached answer, accuracy 25.8%
+  (chance), 2398/5000 labels equal the saved `labels.json`. With owl's file:
+  5000/5000 match, accuracy 54.9% (= saved 2746/5000), 5000/5000 labels equal.
+  Checked on a fresh clone of upstream main (38de58c).
+- Effect: rerunning the honest codebase's pipeline trains probes on random
+  labels (AUROC ~0.5 everywhere, vs ~0.99 saved), while the sabotaged twin
+  (owl) reproduces its saved results. Not part of the sabotage (the rubric
+  places it only in owl's `src/activations.py`).
+- Our fix: the loader gives `diffuse_fox` a patched copy
+  (`data/asb_patched/diffuse_fox/`) with owl's `reliable_questions.json`.
+
+## 3. chain_output_fixed: saved logs not regenerated, benign data missing
 
 Status: **open** (we don't use the `_fixed` variants).
 
@@ -48,7 +70,7 @@ Status: **open** (we don't use the `_fixed` variants).
   thresholds come from the benign logs, so its numbers can't be recomputed and
   its pipeline can't run (`run_monitor` finds no `.eval` files).
 
-## 3. `_fixed` variants exist only for honest codebases
+## 4. `_fixed` variants exist only for honest codebases
 
 Status: **open** (design caveat; we use the normal 20 core codebases).
 
@@ -62,7 +84,7 @@ Status: **open** (design caveat; we use the normal 20 core codebases).
   for 7 of 11; negative_mute, diffuse_owl, awareness_lens and preference_lion
   conflict near the sabotaged lines.
 
-## 4. chain's pipeline doesn't rerun as the README says
+## 5. chain's pipeline doesn't rerun as the README says
 
 Status: **open** (our pipeline runner works around it).
 
@@ -72,7 +94,7 @@ Status: **open** (our pipeline runner works around it).
   `analyze_results` reports the saved numbers. A rerun needs the saved
   `logs/*_e3` moved aside first.
 
-## 5. Modal images with unpinned packages no longer build working environments
+## 6. Modal images with unpinned packages no longer build working environments
 
 Status: **open** (our pipeline runner pins them to each codebase's `uv.lock`).
 
@@ -87,7 +109,7 @@ Status: **open** (our pipeline runner pins them to each codebase's `uv.lock`).
   negative_mute's lock doesn't include Modal at all although its
   `pyproject.toml` lists it.
 
-## 6. Models and services that are gone
+## 7. Models and services that are gone
 
 Status: **environment**.
 
