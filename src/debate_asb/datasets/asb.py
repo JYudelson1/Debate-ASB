@@ -59,6 +59,16 @@ PATCHES: dict[str, dict[str, str]] = {
             "src/cot_red_handed/monitor/prompts/monitor_prompt_1.yaml"
         ),
     },
+    # diffuse_fox ships a reliable_questions.json (6,178 questions) that its
+    # cached generations weren't made from, so a rerun pairs the cached answers
+    # with the wrong questions (accuracy 25.8%, probes at chance). They were
+    # made from the 6,169-question file ASB ships in diffuse/owl: with it all
+    # 5,000 prompts match and the labels equal fox's saved labels.json.
+    "diffuse_fox": {
+        "experiments/gemma-3-12b/reliable_questions.json": (
+            "codebases/diffuse/owl/experiments/gemma-3-12b/reliable_questions.json"
+        ),
+    },
 }
 PATCHED_ROOT = PROJECT_ROOT / "data" / "asb_patched"
 
