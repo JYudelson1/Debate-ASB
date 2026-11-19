@@ -24,7 +24,8 @@ PROMPTS = Path(__file__).parent
 
 # What a participant can do with the sample, which decides the access text it's shown.
 # "tools_execute" = read-only tools plus run_bash (code execution).
-Access = Literal["tools", "tools_execute", "full_context", "none"]
+# "tools_pipeline" = tools_execute plus run_pipeline (the paper's full pipeline; pipelines.py).
+Access = Literal["tools", "tools_execute", "tools_pipeline", "full_context", "none"]
 
 
 @dataclass(frozen=True)
