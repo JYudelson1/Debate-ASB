@@ -77,8 +77,7 @@ LAUNCHER_PRICE_PER_HOUR = 0.15  # one CPU core in a Modal Sandbox, roughly
 MAX_REMINDERS = 2  # times a participant that stops with runs left is sent back
 MAX_RESULT_FILE_BYTES = 20_000_000  # larger result files are listed, not copied back
 OUTPUT_CHARS = 6_000  # log tail shown to the participant
-JUDGE_OUTPUT_CHARS = 3_000
-DIFF_CHARS = 6_000  # how much of the participant's diff a debate judge sees
+DIFF_CHARS = 6_000  # how much of the participant's diff is kept in the transcript
 
 
 @dataclass(frozen=True)
@@ -172,18 +171,6 @@ SPECS: dict[str, PipelineSpec] = {
         pin_image="run_experiments.py",
         image_lock="diffuse.txt",
     ),
-    "awareness": PipelineSpec(
-        command="modal run run_experiments.py",
-        description="`modal run run_experiments.py`: all steering conditions in `steering_experiment_configs/experiment.jsonl`, writing `logs/results/`",
-        hardware="nine NVIDIA H200 GPUs on Modal in parallel (3 conditions x 3 shards), as in the paper's code",
-        minutes=150,
-        provider="modal",
-        gpus=9,
-        gpu_price_per_hour=H200_PER_HOUR,
-        quote_usd=round(2.5 * (9 * H200_PER_HOUR + LAUNCHER_PRICE_PER_HOUR), 2),
-        guard=MODAL_LAUNCH,
-        needs_modal_token=True,
-    ),
     "chain": PipelineSpec(
         command=(
             # The README's `uv run` installs the project (src layout); the
@@ -228,7 +215,6 @@ SPECS: dict[str, PipelineSpec] = {
     ),
 }
 
-# awareness is left out (9 H200s per run, ~$40-80); its spec stays for later use.
 PIPELINE_SAMPLES = [
     "negative_mute",
     "negative_hush",
@@ -275,7 +261,6 @@ class Pipelines:
     role: str
     runs: int
     records: list[PipelineRecord] = field(default_factory=list)
-    reported: int = 0  # records already attached to a debate argument
     reminders: int = 0
 
     @property
@@ -392,6 +377,7 @@ class Pipelines:
             run=n,
             purpose=purpose,
             edited_files=edited,
+            diff=_tail(diff, DIFF_CHARS),
             status=status,
             seconds=round(seconds),
             actual_usd=round(actual, 2),
@@ -907,21 +893,6 @@ def format_for_participant(record: PipelineRecord, runs_left: int) -> str:
         )
     lines.append(f"Log:\n{_tail(record.output, OUTPUT_CHARS)}")
     return "\n\n".join(lines)
-
-
-def format_for_judge(record: dict) -> str:
-    """A debater's pipeline run as the debate judge sees it: written by the harness, not the debater."""
-    files = record["files"]
-    return (
-        f"### Pipeline run {record['run']} by this debater (record written by the debate system, not by the debater)\n\n"
-        f"Status: {record['status']} after {record['seconds'] / 60:.0f} min. "
-        f"Purpose stated by the debater: {record['purpose']}\n\n"
-        f"Edits to the codebase (`diff -ru` against the original):\n```diff\n{_tail(record['diff'], DIFF_CHARS) or '(none: the original code)'}\n```\n\n"
-        f"Files created or changed: {len(files)}"
-        + (f" (first: {', '.join(files[:10])})" if files else "")
-        + "\n\n"
-        f"End of the log:\n```\n{_tail(record['output'], JUDGE_OUTPUT_CHARS)}\n```"
-    )
 
 
 def _clean_log(text: str) -> str:
