@@ -17,10 +17,11 @@ The debate is a replayable stage: judge one debate k times with
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from inspect_ai import task
 from inspect_ai.model import ChatMessage, ChatMessageSystem, ChatMessageUser
+from inspect_ai.tool import Tool
 from inspect_ai.util import span
 
 from debate_asb.datasets import Dataset, load_samples
@@ -86,7 +87,6 @@ class Debate:
         return await self.judge_debate(sample, tools, arguments)
 
     async def debate(self, sample: AuditSample, tools: ToolSet) -> list[dict]:
-        debater_tools = tools.for_role("debaters")
         debaters = [
             (self.sabotaged, "debater_sabotaged"),
             (self.clean, "debater_clean"),
@@ -95,13 +95,18 @@ class Debate:
             role: [
                 ChatMessageSystem(
                     content=self._debater_prompt(
-                        sample, debater, access_for(debater_tools)
+                        sample, debater, access_for(tools.for_role("debaters"))
                     )
                 )
             ]
             for debater, role in debaters
         }
         arguments: list[dict] = []
+        # Each debater's tools; subclasses may add their own (see _debater_tools).
+        debater_tools = {
+            role: self._debater_tools(sample, role, tools.for_role("debaters"))
+            for _, role in debaters
+        }
 
         for round in range(1, self.n_rounds + 1):
             for debater, role in debaters:
@@ -125,13 +130,18 @@ class Debate:
                         debater,
                         role,
                         messages,
-                        debater_tools,
+                        debater_tools[role],
                         self.debater_max_steps,
                         self._turn_budget(debater),
+                        before_stop=self._before_stop(sample, role, round),
                     )
-                arguments.append(
-                    {"round": round, "side": debater.side.value, "argument": argument}
-                )
+                entry = {
+                    "round": round,
+                    "side": debater.side.value,
+                    "argument": argument,
+                }
+                self._after_turn(sample, role, entry)
+                arguments.append(entry)
                 note(
                     "argument",
                     **self.note_context,
@@ -160,10 +170,7 @@ class Debate:
             sabotaged_claim=(self.claims or sample.prompts.claims)[Side.SABOTAGED],
             clean_claim=(self.claims or sample.prompts.claims)[Side.CLEAN],
         )
-        debate = "\n\n".join(
-            f"## Round {a['round']}: debater arguing {a['side'].upper()}\n\n{a['argument']}"
-            for a in arguments
-        )
+        debate = "\n\n".join(self._format_argument(a) for a in arguments)
         messages = [
             ChatMessageSystem(content=system_prompt),
             ChatMessageUser(
@@ -186,6 +193,28 @@ class Debate:
             response=messages[-1].text,
             credence=credence,
         )
+
+    # Hooks for subclasses (e.g. pipeline_runs.PipelineDebate). The defaults
+    # leave the plain debate exactly as it is.
+
+    def _debater_tools(
+        self, sample: AuditSample, role: str, tools: list[Tool]
+    ) -> list[Tool]:
+        """A debater's tools for this sample."""
+        return tools
+
+    def _before_stop(
+        self, sample: AuditSample, role: str, round: int
+    ) -> Callable[[], str | None] | None:
+        """agent_loop's before_stop for this turn: may send a debater back before it ends its turn."""
+        return None
+
+    def _after_turn(self, sample: AuditSample, role: str, entry: dict) -> None:
+        """Called with each argument entry before it joins the debate; may add (JSON-able) fields."""
+
+    def _format_argument(self, entry: dict) -> str:
+        """How an argument entry appears in the judge's transcript."""
+        return f"## Round {entry['round']}: debater arguing {entry['side'].upper()}\n\n{entry['argument']}"
 
     def _turn_budget(self, debater: Participant) -> float:
         """Nominal USD a debater may spend per turn."""

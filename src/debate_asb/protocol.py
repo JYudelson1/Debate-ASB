@@ -216,10 +216,14 @@ async def agent_loop(
     tools: list[Tool],
     max_steps: int = 40,
     max_cost: float = 3.0,
+    before_stop: Callable[[], str | None] | None = None,
 ) -> str:
     """Let the participant call tools until it stops, runs out of steps, or spends max_cost.
 
     max_cost is nominal USD for this loop. Returns the participant's final text.
+    before_stop, if given, is asked when the participant stops: a message it
+    returns is sent back and the loop goes on (e.g. "you have required runs
+    left"); None lets it stop.
     """
     spent = 0.0
     for _ in range(max_steps):
@@ -228,6 +232,9 @@ async def agent_loop(
         )
         spent += participant.model.price().cost(output.usage)
         if not output.message.tool_calls:
+            if before_stop and spent < max_cost and (reminder := before_stop()):
+                messages.append(ChatMessageUser(content=reminder))
+                continue
             return output.completion
         tool_messages, _ = await execute_tools(messages, tools)
         messages.extend(tool_messages)
