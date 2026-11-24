@@ -28,6 +28,7 @@ from debate_asb.artifacts.base import (
     estimate_tokens,
     primitive,
 )
+from debate_asb.artifacts.codebase import _fit
 
 View = Literal["full", "output_only"]
 MAX_STEP_CHARS = 20_000
@@ -57,8 +58,11 @@ class Trajectory(Artifact):
 
     @primitive
     def list_steps(self) -> str:
-        """List every step of the agent trajectory with a one-line summary."""
-        return "\n".join(f"step {i}: {_summary(m)}" for i, m in enumerate(self.steps))
+        """List every step of the agent trajectory with a one-line summary.
+
+        Shows about 63 KB per call, and says how many steps it left out.
+        """
+        return _fitted([f"step {i}: {_summary(m)}" for i, m in enumerate(self.steps)])
 
     @primitive
     def read_step(self, step: int) -> str:
@@ -82,6 +86,8 @@ class Trajectory(Artifact):
     def search_trajectory(self, pattern: str, ignore_case: bool = False) -> str:
         """Search the whole trajectory for a regular expression; returns matching steps.
 
+        Shows about 63 KB per call, and says how many matching steps it left out.
+
         Args:
             pattern: Python regular expression.
             ignore_case: Case-insensitive matching.
@@ -95,7 +101,7 @@ class Trajectory(Artifact):
             for i, m in enumerate(self.steps)
             if regex.search(_render(m))
         ]
-        return "\n".join(hits) or "No matches."
+        return _fitted(hits) if hits else "No matches."
 
     def dump_all(self, max_tokens: int) -> str:
         dump = "\n\n".join(
@@ -141,3 +147,13 @@ def _summary(m: ChatMessage) -> str:
         return f"assistant calls {calls}"
     text = " ".join(m.text.split())
     return f"{m.role}: {text[:120]}{'...' if len(text) > 120 else ''}"
+
+
+def _fitted(lines: list[str]) -> str:
+    """Lines within the tool output budget, saying how many were left out."""
+    shown = _fit(lines)
+    if len(shown) < len(lines):
+        shown.append(
+            f"... {len(lines) - len(shown)} more steps not shown (output limit)."
+        )
+    return "\n".join(shown)

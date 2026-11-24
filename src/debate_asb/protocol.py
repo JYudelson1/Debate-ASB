@@ -41,6 +41,7 @@ from inspect_ai.tool import Tool, ToolDef
 from inspect_ai.util import span, store
 
 from debate_asb.artifacts import Artifact, Codebase
+from debate_asb.artifacts.codebase import TOOL_OUTPUT_BYTES
 from debate_asb.models import Participant
 from debate_asb.prompts import SETTINGS, Access, PromptSet
 
@@ -229,7 +230,9 @@ async def agent_loop(
         spent += participant.model.price().cost(output.usage)
         if not output.message.tool_calls:
             return output.completion
-        tool_messages, _ = await execute_tools(messages, tools)
+        tool_messages, _ = await execute_tools(
+            messages, tools, max_output=TOOL_OUTPUT_BYTES
+        )
         messages.extend(tool_messages)
         if spent >= max_cost:
             break

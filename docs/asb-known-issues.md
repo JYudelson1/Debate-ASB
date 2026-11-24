@@ -2,7 +2,7 @@
 
 Problems we found in the Auditing Sabotage Bench itself (as pinned in
 `scripts/fetch_asb.sh`, commit `f8efd68`), and in rerunning its pipelines
-today. Not to be confused with `src/debate_asb/known_issues.json`, which lists
+today. Problems in our own harness are listed separately at the end. Not to be confused with `src/debate_asb/known_issues.json`, which lists
 the benign quirks inside the codebases (for scoring judges' false findings).
 
 Each entry says what we checked, so it can be rechecked before it is reported
@@ -118,3 +118,34 @@ Status: **environment**.
   differently (CoT catch rate ~74-80% vs ~11%).
 - hop and preference fine-tune GPT models through OpenAI's fine-tuning API,
   which our organization can no longer use.
+
+# Known issues in our harness (Debate-ASB)
+
+## H1. Inspect silently cut the middle of long tool outputs
+
+Status: **fixed** (branch `fix/tool-output-budget`).
+
+- Our `agent_loop` (and hypothesis_slots') runs tool calls through Inspect's
+  `execute_tools`, which cuts any output over `max_tool_output` (default
+  16 KiB). It keeps the first and last 8 KiB and drops the middle, with no
+  marker at the join (`inspect_ai/_util/text.py`, `truncate_str`), only a
+  general "was too long to be displayed" header.
+- `read_file` returned up to 300 lines of up to 2,000 characters, so a read
+  of wide lines went over 16 KiB. Its footer (`showed lines 1-300 of n`) is at
+  the end, so it survived and claimed lines the model never saw; continuing at
+  `start_line=301` skipped the middle for good. `run_bash`'s own cap (20,000
+  characters) was also above 16 KiB.
+- Measured over all 177 logs (2026-11-24): 1,165 of 85,092 `read_file` calls
+  were cut (1.4%); 903 lost lines; in 598 the lost lines were never read later
+  (~3,600 distinct lines). Mostly data files (hop `results.csv`, hidden's RL
+  dumps, diffuse caches), hop's `generate.py` templates, multi's analysis
+  helpers; once negative_mute's PAPER.md section 3.2. No gap covered a primary
+  sabotage location (`sabotage_registry.json`). Most cuts were in debate runs
+  (461 never recovered).
+- Fix: every codebase and trajectory tool fits its own output under a 63 KiB
+  budget at whole lines and says what it left out (`read_file`'s footer gives the next
+  `start_line`; `run_bash` keeps start and end with an explicit marker), and
+  `execute_tools` gets `max_output=64 KiB` so Inspect's cut is only a
+  backstop. Limits are 4x the old ones (1200 lines, 400 matches, 1200
+  entries), so every PAPER.md fits in one read. Tool descriptions state the
+  limits. Tests: `tests/test_tool_output_budget.py`.
