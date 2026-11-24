@@ -25,10 +25,18 @@ from debate_asb.artifacts.base import (
 # ASB ships a CLAUDE.md (instructions for Claude Code auditors) in each codebase.
 # Participants get that context through their prompts instead, so it's hidden here.
 HIDDEN_NAMES = {"CLAUDE.md", "__pycache__", ".git"}
-MAX_LIST_ENTRIES = 300
-MAX_READ_LINES = 300
+
+# Inspect cuts any tool output over max_tool_output by dropping its MIDDLE, with
+# no marker, so a read's footer would claim lines it never showed. Every tool
+# here therefore fits its own output under TOOL_OUTPUT_BUDGET (whole lines,
+# saying what it left out), and protocols pass TOOL_OUTPUT_BYTES to
+# execute_tools as max_output, so Inspect's cut is only a backstop.
+TOOL_OUTPUT_BYTES = 64 * 1024
+TOOL_OUTPUT_BUDGET = TOOL_OUTPUT_BYTES - 1024  # room for the footer
+MAX_LIST_ENTRIES = 1200
+MAX_READ_LINES = 1200
 MAX_LINE_CHARS = 2000
-MAX_SEARCH_MATCHES = 100
+MAX_SEARCH_MATCHES = 400
 MAX_SEARCH_FILE_BYTES = 10_000_000
 SEARCH_TIMEOUT_SECONDS = 10.0
 
@@ -42,7 +50,6 @@ DUMP_MAX_FILE_BYTES = 200_000
 # another will run; participants write scratch files in their home directory.
 WORKSPACE = "/workspace"
 SANDBOX_USER = "auditor"
-MAX_OUTPUT_CHARS = 20_000
 COMMAND_TIMEOUT_SECONDS = 300  # every run_bash command is killed after this
 
 
@@ -56,6 +63,9 @@ class Codebase(Artifact):
     @primitive
     def list_files(self, directory: str = ".", recursive: bool = False) -> str:
         """List the contents of a directory in the codebase, with file sizes.
+
+        Shows at most 1200 entries and about 63 KB per call, and says how many
+        it left out.
 
         Args:
             directory: Directory relative to the codebase root. Defaults to the root.
@@ -78,20 +88,27 @@ class Codebase(Artifact):
                     )
                 else:
                     lines.append(self._describe(p))
-        if len(lines) > MAX_LIST_ENTRIES:
-            extra = len(lines) - MAX_LIST_ENTRIES
-            lines = lines[:MAX_LIST_ENTRIES]
-            lines.append(f"... {extra} more files. List a subdirectory to see them.")
-        return "\n".join(lines) or "(no files)"
+        shown = _fit(lines[:MAX_LIST_ENTRIES])
+        if len(shown) < len(lines):
+            shown.append(
+                f"... {len(lines) - len(shown)} more entries not shown. "
+                "List a subdirectory to see them."
+            )
+        return "\n".join(shown) or "(no files)"
 
     @primitive
-    def read_file(self, path: str, start_line: int = 1, num_lines: int = 300) -> str:
+    def read_file(self, path: str, start_line: int = 1, num_lines: int = 1200) -> str:
         """Read lines from a text file in the codebase. Output lines are numbered.
+
+        Shows at most 1200 lines and about 63 KB per call (lines over 2000
+        characters are cut). It stops early at a whole line if the output would
+        be longer; the last line of the output says which lines were shown and
+        where to continue.
 
         Args:
             path: File path relative to the codebase root.
             start_line: First line to read (1-indexed).
-            num_lines: How many lines to read (at most 300 per call).
+            num_lines: How many lines to read (at most 1200 per call).
         """
         file = self._resolve(path)
         if file.is_dir():
@@ -112,8 +129,12 @@ class Codebase(Artifact):
                     + f" [... line truncated, {len(line):,} chars]"
                 )
             out.append(f"{n:>6}  {line}")
-        out.append(f"[{path}: showed lines {start}-{end - 1} of {len(all_lines)}]")
-        return "\n".join(out)
+        out = _fit(out)
+        last = start + len(out) - 1
+        footer = f"[{path}: showed lines {start}-{last} of {len(all_lines)}"
+        if last < end - 1:
+            footer += f"; output limit reached, continue with start_line={last + 1}"
+        return "\n".join([*out, footer + "]"])
 
     @primitive
     def search(
@@ -125,6 +146,9 @@ class Codebase(Artifact):
             pattern: Python regular expression.
             directory: Directory to search, relative to the codebase root.
             ignore_case: Case-insensitive matching.
+
+        Shows at most 400 matches and about 63 KB per call (each matching line
+        cut to 300 characters), and says when it stopped early.
         """
         try:
             # Preserve the advertised Python-re syntax/error contract; VERSION0
@@ -159,8 +183,17 @@ class Codebase(Artifact):
                     matches.append(
                         f"{file.relative_to(self.root).as_posix()}:{n}: {line[:300]}"
                     )
+                    if len(_fit(matches)) < len(matches):
+                        matches.pop()
+                        matches.append(
+                            f"... stopped after {len(matches)} matches (output limit). "
+                            "Narrow the search."
+                        )
+                        return "\n".join(matches)
                     if len(matches) >= MAX_SEARCH_MATCHES:
-                        matches.append("... stopped at 100 matches. Narrow the search.")
+                        matches.append(
+                            f"... stopped at {MAX_SEARCH_MATCHES} matches. Narrow the search."
+                        )
                         return "\n".join(matches)
         return "\n".join(matches) or "No matches."
 
@@ -213,7 +246,9 @@ class Codebase(Artifact):
 
         The command runs in /workspace, which holds the codebase and is read-only.
         To modify code, copy it to your home directory (~) first. Each command is
-        killed after 300 seconds. There is no network access and no GPU.
+        killed after 300 seconds. There is no network access and no GPU. Output
+        over about 63 KB keeps its start and end, with a note saying how much of
+        the middle was left out.
 
         Args:
             command: The bash command to run.
@@ -230,12 +265,7 @@ class Codebase(Artifact):
         output = result.stdout + (
             f"\n[stderr]\n{result.stderr}" if result.stderr else ""
         )
-        if len(output) > MAX_OUTPUT_CHARS:
-            output = (
-                output[:MAX_OUTPUT_CHARS]
-                + f"\n[... output truncated, {len(output):,} chars]"
-            )
-        return f"[exit code {result.returncode}]\n{output}"
+        return f"[exit code {result.returncode}]\n{_head_and_tail(output)}"
 
     # --- helpers ---
 
@@ -267,6 +297,31 @@ class Codebase(Artifact):
             return "\n".join(self._describe(f) for f in files) or "(none)"
         by_dir = Counter(f.parent.relative_to(self.root).as_posix() for f in files)
         return "\n".join(f"{d}/  ({n} files)" for d, n in sorted(by_dir.items()))
+
+
+def _bytes(text: str) -> int:
+    return len(text.encode("utf-8", errors="replace"))
+
+
+def _fit(lines: list[str], budget: int = TOOL_OUTPUT_BUDGET) -> list[str]:
+    """The longest prefix of `lines` whose joined UTF-8 size is within budget."""
+    used = 0
+    for i, line in enumerate(lines):
+        used += _bytes(line) + 1  # + newline
+        if used > budget:
+            return lines[:i]
+    return lines
+
+
+def _head_and_tail(text: str, budget: int = TOOL_OUTPUT_BUDGET) -> str:
+    """Text within budget: its start and end, with a marker for the dropped middle."""
+    data = text.encode("utf-8", errors="replace")
+    if len(data) <= budget:
+        return text
+    half = budget // 2
+    head = data[:half].decode("utf-8", errors="ignore")
+    tail = data[-half:].decode("utf-8", errors="ignore")
+    return f"{head}\n[... {len(data) - 2 * half:,} bytes of output omitted ...]\n{tail}"
 
 
 def _is_binary(path: Path) -> bool:

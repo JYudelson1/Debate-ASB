@@ -39,6 +39,7 @@ from inspect_ai.model import (
 )
 from inspect_ai.tool import Tool, ToolDef, ToolError
 
+from debate_asb.artifacts.codebase import TOOL_OUTPUT_BYTES
 from debate_asb.datasets import Dataset, load_samples
 from debate_asb.models import (
     DEFAULT_MODEL,
@@ -296,7 +297,9 @@ class HypothesisSlotsJudge:
         output = await generate(self.judge, "judge", messages, tools)
         spend.spent += self.judge.model.price().cost(output.usage)
         if output.message.tool_calls:
-            tool_messages, _ = await execute_tools(messages, tools)
+            tool_messages, _ = await execute_tools(
+                messages, tools, max_output=TOOL_OUTPUT_BYTES
+            )
             messages.extend(tool_messages)
             last = messages[-1]
             if (
