@@ -20,6 +20,7 @@ from debate_asb.openrouter_budget import (
     EndpointTerms,
     GuardedTransport,
     SpendLedger,
+    guarded_model,
 )
 
 TERMS = EndpointTerms(1_050_000, Decimal("0.25"), Decimal("0.75"), 128_000)
@@ -257,6 +258,55 @@ async def test_violation_freezes_all_later_attempts(tmp_path, response, expected
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("cap, retry_fits", [("1", True), ("0.27", False)])
+async def test_sdk_retries_are_separately_reserved(tmp_path, cap, retry_fits):
+    path = tmp_path / "cost.sqlite"
+    outbound = 0
+
+    def responder(request):
+        nonlocal outbound
+        outbound += 1
+        if outbound == 1:
+            return httpx2.Response(
+                502, json={"error": {"code": 502}}, headers={"Retry-After": "0.01"}
+            )
+        return completion()
+
+    async with AsyncOpenAI(
+        api_key="mock-only",
+        base_url=BASE_URL,
+        max_retries=1,
+        http_client=httpx2.AsyncClient(transport=transport(path, responder, cap=cap)),
+    ) as client:
+        if retry_fits:
+            result = await client.chat.completions.create(
+                model=MODEL,
+                messages=PROMPT,
+                max_tokens=2048,
+                extra_body={
+                    "provider": TERMS.provider_pin(),
+                    "usage": {"include": True},
+                },
+            )
+            assert result.choices[0].message.content == "Hello"
+        else:
+            with pytest.raises(BudgetBlocked, match="available budget"):
+                await client.chat.completions.create(
+                    model=MODEL,
+                    messages=PROMPT,
+                    max_tokens=2048,
+                    extra_body={
+                        "provider": TERMS.provider_pin(),
+                        "usage": {"include": True},
+                    },
+                )
+    assert outbound == 1 + retry_fits
+    assert [row[2] for row in rows(path)] == ["billing-unresolved"] + [
+        "billed"
+    ] * retry_fits
+
+
+@pytest.mark.asyncio
 async def test_success_with_missing_billing_is_rejected_and_keeps_reserve(tmp_path):
     path = tmp_path / "cost.sqlite"
     responder = lambda _: httpx2.Response(200, json={"id": "gen-unsettled"})
@@ -264,6 +314,31 @@ async def test_success_with_missing_billing_is_rejected_and_keeps_reserve(tmp_pa
         with pytest.raises(BudgetBlocked, match="missing billable usage"):
             await client.post(CHAT_URL, json=body())
     assert rows(path) == [(TERMS.reserve_nano(2048), None, "billing-unresolved")]
+
+
+@pytest.mark.asyncio
+async def test_inspect_request_uses_guarded_client(tmp_path):
+    path = tmp_path / "cost.sqlite"
+    outbound = []
+
+    def responder(request):
+        outbound.append(json.loads(request.content))
+        return completion()
+
+    model = guarded_model(
+        transport(path, responder),
+        api_key="mock-only",
+        config=GenerateConfig(max_tokens=2048, max_retries=0, cache=False),
+    )
+    try:
+        output = await model.generate("Hello")
+    finally:
+        await model.api.aclose()
+    assert output.completion == "Hello"
+    assert len(outbound) == 1
+    assert outbound[0]["provider"] == TERMS.provider_pin()
+    assert outbound[0]["usage"] == {"include": True}
+    assert rows(path) == [(TERMS.reserve_nano(2048), 10_000_000, "billed")]
 
 
 @pytest.mark.asyncio
@@ -310,3 +385,32 @@ async def test_allowlisted_model_uses_exact_standard_endpoint(
         EndpointTerms.from_endpoint(endpoint | {"tag": "openai/flex"}, model=model_id)
     with pytest.raises(BudgetBlocked, match="exact"):
         EndpointTerms.from_endpoint(endpoint)
+    path = tmp_path / "test.sqlite"
+    ledger = SpendLedger(path, cap_usd=Decimal(100), smoke_reserve_usd=Decimal(70))
+    ledger.enable_quartile_stops()
+    sent = []
+
+    def responder(request):
+        sent.append(json.loads(request.content))
+        return completion(model=version)
+
+    transport = GuardedTransport(
+        ledger,
+        terms,
+        batch="allowlisted-model",
+        inner=httpx2.MockTransport(responder),
+    )
+    model = guarded_model(
+        transport,
+        api_key="mock-only",
+        config=GenerateConfig(max_tokens=12_288, max_retries=0, cache=False),
+    )
+    try:
+        output = await model.generate("Hello")
+    finally:
+        await model.api.aclose()
+    assert output.completion == "Hello"
+    assert [request["model"] for request in sent] == [model_id]
+    assert ledger.summary()["serving"] == [
+        {"model": version, "provider": "OpenAI", "calls": 1}
+    ]
