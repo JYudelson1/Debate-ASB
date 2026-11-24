@@ -182,6 +182,24 @@ They are rendered once with Python `str.format`; their JSON outputs are adapted
 by `protocols/hypothesis_workers.py`. Both receive the existing ASB Blue Team
 Context. See `docs/hypothesis-workers.md` for routing and budget semantics.
 
+# Pipeline runs (`asb/pipelines/`, `asb/access_tools_pipeline.md`)
+
+For `protocols/pipeline_runs.py` (see `docs/pipeline-runs.md`).
+
+- `access_tools_pipeline.md` is ADAPTED from `access_tools_execute.md`,
+  changed only where it forbids experiments: the ban now applies to
+  `run_bash`, and points to `run_pipeline` for the paper's pipeline. The tool
+  count and list name `run_pipeline`.
+- `pipelines/judge.md` is NEW (ours): the runs are required, what the pipeline
+  runs and on what, the time limit, where results go, that the unchanged
+  pipeline reproduces the saved results (checked by our pre-runs) so a rerun
+  of the original tells nothing new, and that the run should test a
+  hypothesis on an edited variant (if the edit changes the key results, the
+  original may be sabotaged). Added after the first study, in which every
+  judge spent its run on the unchanged code. `{runs}`, `{pipeline}`,
+  `{hardware}`, `{minutes}` and `{results_dir}` are filled from
+  `debate_asb/pipelines.py`.
+
 # Hypothesis slots (`asb/hypothesis_slots/`)
 
 Additions for `protocols/hypothesis_slots.py`, a lone judge with three
