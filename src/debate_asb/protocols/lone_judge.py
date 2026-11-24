@@ -13,7 +13,14 @@ from inspect_ai import task
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser
 
 from debate_asb.datasets import Dataset, load_samples
-from debate_asb.models import DEFAULT_MODEL, DEFAULT_PROVIDER, ModelSpec, Participant
+from debate_asb.models import (
+    DEFAULT_MODEL,
+    DEFAULT_PROVIDER,
+    ModelSpec,
+    Participant,
+    ReasoningEffort,
+)
+from debate_asb.prompts import Calibration
 from debate_asb.protocol import (
     AuditSample,
     ProtocolResult,
@@ -32,11 +39,12 @@ class LoneJudge:
     max_steps: int = 40
     max_cost: float = 3.0  # nominal USD per sample; once spent, the judge must answer
     access: ToolAccess = ToolAccess()
+    calibration: Calibration = "asb"  # how the judge is told to choose its credence
 
     async def run(self, sample: AuditSample, tools: ToolSet) -> ProtocolResult:
         judge_tools = tools.for_role("judge")
         system_prompt = self.judge.system_prompt or sample.prompts.judge(
-            access_for(judge_tools), self.max_steps
+            access_for(judge_tools), self.max_steps, calibration=self.calibration
         )
         messages = [
             ChatMessageSystem(content=system_prompt),
@@ -55,6 +63,8 @@ class LoneJudge:
 def lone_judge(
     judge_model: str = DEFAULT_MODEL,
     judge_provider: str = DEFAULT_PROVIDER,
+    judge_reasoning_effort: ReasoningEffort | None = None,
+    calibration: Calibration = "asb",
     dataset: Dataset = "asb",
     sample_ids: str | list[str] | None = None,
     max_steps: int = 40,
@@ -63,9 +73,13 @@ def lone_judge(
     replay: str | None = None,
     reuse: str | list[str] | tuple[str, ...] = (),
 ):
-    judge = Participant(ModelSpec(judge_model, judge_provider))
+    judge = Participant(
+        ModelSpec(judge_model, judge_provider, reasoning_effort=judge_reasoning_effort)
+    )
     return protocol_task(
-        LoneJudge(judge, max_steps=max_steps, max_cost=max_cost),
+        LoneJudge(
+            judge, max_steps=max_steps, max_cost=max_cost, calibration=calibration
+        ),
         load_samples(dataset, sample_ids),
         replay,
         reuse,
