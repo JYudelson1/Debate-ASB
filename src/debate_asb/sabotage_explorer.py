@@ -144,6 +144,7 @@ def build_payload() -> dict:
     registry = read_registry()
     samples = []
     for sid, entry in registry["samples"].items():
+        reference = resolve_sabotage(sid, document=registry)
         paper_path = PROJECT_ROOT / "data/asb" / entry["workspace"] / "PAPER.md"
         paper = None
         if paper_path.is_file():
@@ -191,14 +192,18 @@ def build_payload() -> dict:
                 "limitations": entry["limitations"],
                 "locations": locations,
                 "annotation_relation": entry.get("annotation_relation"),
-                "reference": resolve_sabotage(sid, document=registry),
+                "reference": reference,
                 "known_issues": sample_catalog(sid)["entries"],
+                "acceptable_fixes": entry.get("acceptable_fixes", []),
+                "fix_review": entry.get("fix_review"),
+                "fix_validation": reference["fix_validation"],
             }
         )
     return {
         "registry_version": registry["registry_version"],
         "registry_sha256": digest(registry),
         "source_commit": registry["source_commit"],
+        "fix_policy": registry.get("fix_policy"),
         "samples": samples,
     }
 

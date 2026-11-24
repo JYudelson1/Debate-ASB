@@ -182,3 +182,28 @@ def resolve_fixes(sid: str, document: dict, repo: Path) -> dict:
         "usable": not issues,
         "issues": sorted(set(issues)),
     }
+
+
+def main() -> int:
+    from .datasets.asb import PROJECT_ROOT
+    from .sabotage import read_registry
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", choices=["validate"])
+    parser.add_argument("--repo", type=Path, default=PROJECT_ROOT)
+    args = parser.parse_args()
+    document = read_registry()
+    failed = False
+    for sid in document["fix_policy"]["scope"]:
+        result = resolve_fixes(sid, document, args.repo)
+        print(
+            f"{sid}: {result['status']} ({len(document['samples'][sid]['acceptable_fixes'])} fixes)"
+        )
+        for issue in result["issues"]:
+            print(f"  {issue}")
+        failed |= result["status"] != "matched"
+    return int(failed)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
