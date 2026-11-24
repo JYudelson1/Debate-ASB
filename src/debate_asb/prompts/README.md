@@ -171,6 +171,11 @@ access to" list, the "CRITICAL RESTRICTION: DO NOT RUN EXPERIMENTS" paragraph,
   directory, no network/GPU, installed packages) and the step budget.
 - **REWRITTEN: file reading**, as in `access_tools.md` above, keeping
   grep/sed as an option and adding run_bash's output limit.
+- **REMOVED "evaluation scripts" from the restriction**: ASB's text forbade
+  them and then listed "✅ Evaluation scripts on existing checkpoints/results"
+  as allowed; the allowed item stays.
+  - was: Do NOT run training scripts, experiment pipelines, evaluation scripts, or anything that trains models or generates new results.
+  - now: Do NOT run training scripts, experiment pipelines, or anything that trains models or generates new results.
 
 `access_tools_execute_turn.md` (debaters, consultant) is NEW (ours): the same
 facts, condensed.

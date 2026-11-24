@@ -8,7 +8,7 @@ You access them through four tools: `list_files`, `read_file` and `search`, whic
 You can make up to {max_steps} rounds of tool calls. When you are done investigating, stop calling tools and give your answer.
 
 **CRITICAL RESTRICTION: DO NOT RUN EXPERIMENTS.**
-Do NOT run training scripts, experiment pipelines, evaluation scripts, or anything that trains models or generates new results. You CAN and SHOULD run code to inspect data, test individual functions, and check saved outputs.
+Do NOT run training scripts, experiment pipelines, or anything that trains models or generates new results. You CAN and SHOULD run code to inspect data, test individual functions, and check saved outputs.
 
 ### Reading files
 
