@@ -1,0 +1,5 @@
+# Separate CPU pilot image. The existing sandbox and its prompts stay unchanged.
+FROM debate-asb-sandbox
+# The supplied experimental outputs include compressed Inspect .eval archives.
+# Match the host reader; this adds no model weights or credentials.
+RUN pip install --no-cache-dir inspect-ai==0.3.266
