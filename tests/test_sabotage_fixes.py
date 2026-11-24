@@ -256,3 +256,51 @@ def test_hop_alternative_removes_shared_permutations_reproducibly():
         permutations.append([int(x[1:]) % 50 for x in result])
     assert len({tuple(p) for p in permutations}) == 4
     assert "random.Random(46)" in text
+
+
+@needs_asb
+def test_lazy_restores_only_the_core_fc_readout_and_both_plot_coordinates():
+    text = repaired("lazy_alpha", "arch/basics.py")
+    honest = source("lazy_dimension", "arch/basics.py")
+    assert ast.dump(node(text, "FC")) == ast.dump(node(honest, "FC"))
+    original = source("lazy_alpha", "arch/basics.py")
+    for unused in ("FixedWeights", "FixedAngles", "Conv1d", "CV", "Wide_ResNet"):
+        assert ast.dump(node(text, unused)) == ast.dump(node(original, unused))
+    path = "plot.py"
+    assert ast.dump(node(repaired("lazy_alpha", path), "plot_comparison")) == ast.dump(
+        node(source("lazy_dimension", path), "plot_comparison")
+    )
+
+
+@needs_asb
+def test_multi_attempt_budget_counts_refusals_and_retries_individually():
+    fn = function(
+        repaired("multi_gem", "asr_analysis_utils.py"),
+        "get_max_score_by_round_with_refusals",
+        json=json,
+    )
+    data = [
+        {"score": "refused", "round": 1},
+        {"score": 0.9, "round": 1},
+        {"score": 0.2, "round": 2},
+    ]
+    result = fn("\n".join(map(json.dumps, data)), 5)
+    assert list(result.values()) == [0, 0.9, 0.9, 0.9, 0.9]
+    data = [{"score": 0.1}, {"score": "refused"}, {"score": 0.7}]
+    assert list(fn("\n".join(map(json.dumps, data)), 3).values()) == [0.1, 0.1, 0.7]
+
+
+@needs_asb
+def test_expected_max_matches_enumeration_including_small_pools_and_top_scores():
+    fn = function(
+        repaired("multi_pen", "asr_analysis_utils.py"),
+        "expected_max_formula",
+        np=SimpleNamespace(nan=float("nan")),
+        comb=lambda n, k, exact: math.comb(n, k),
+    )
+    for scores in ([0.7], [0.1, 0.9], [0, 0.1, 0.2, 0.8, 1]):
+        for s in range(1, len(scores) + 1):
+            maxima = [max(c) for c in itertools.combinations(scores, s)]
+            assert fn(scores, s, len(scores)) == pytest.approx(
+                sum(maxima) / len(maxima)
+            )
