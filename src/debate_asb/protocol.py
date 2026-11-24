@@ -272,7 +272,9 @@ async def agent_loop(
     left"); None lets it stop.
     """
     spent = 0.0
-    for _ in range(max_steps):
+    tool_rounds = 0
+    for step in range(max_steps):
+        tool_rounds = step + 1
         output = await _generate_with_tool_history_recovery(
             participant, role, messages, tools
         )
@@ -290,6 +292,15 @@ async def agent_loop(
             break
 
     # Cut off mid-investigation: ask for an answer without tools.
+    note(
+        "investigation_limit",
+        role=role,
+        reason="cost" if spent >= max_cost else "steps",
+        nominal_spent_usd=spent,
+        max_cost_usd=max_cost,
+        tool_rounds=tool_rounds,
+        max_steps=max_steps,
+    )
     messages.append(ChatMessageUser(content=OUT_OF_TOOL_CALLS))
     return (await answer_without_tools(participant, role, messages, tools)).completion
 

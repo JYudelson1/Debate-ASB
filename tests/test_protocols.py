@@ -1021,5 +1021,10 @@ def test_model_that_ignores_tool_choice_none_still_answers(script, tmp_path):
     assert any("[called list_files(" in m.text for m in calls[2].input)
     assert sample.store["credence"] == 35
     assert [e["event"] for e in sample.store["transcript"]] == [
-        "ignored_tool_choice_none"
+        "investigation_limit",
+        "ignored_tool_choice_none",
     ]
+    limit = sample.store["transcript"][0]
+    assert limit["reason"] == "cost"
+    assert limit["tool_rounds"] == 1
+    assert limit["max_cost_usd"] == 0.0
