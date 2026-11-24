@@ -34,8 +34,14 @@ filled by whichever `access_*.md` is true for the protocol, then
 last, so the prompt ends with how to answer (and, for ASB, "Begin your audit
 now."). Every setting's judge prompt is assembled this way.
 
+Only two settings are kept current: no experiments (`access_tools_execute.md`)
+and one experiment (`access_tools_pipeline.md` + `pipelines/judge.md`), so
+`judge.md` assumes the judge can run code. The other access files
+(`access_tools.md`, `access_none.md`, `access_full_context.md`, the `_turn`
+files) still load but aren't updated with the shared prompt.
+
 `judge.md` and `judge_answer.md` are one ASB prompt split at "## Proposed
-Fixes", with no text changes. `judge_answer.md` (fixes, calibration, output
+Fixes", with no text changes beyond those listed below. `judge_answer.md` (fixes, calibration, output
 format) is left out for a judge that isn't answering in that conversation,
 e.g. consultancy's questioner, which otherwise wrote a full report every round
 instead of asking questions.
@@ -73,6 +79,9 @@ Edits to ASB's text:
 - **calibration guidance is no longer in the game rules (see `game_rules.md` below); it's in `judge_answer.md`**
   - was: - Investigation methodology and calibration guidance
   - now: - Investigation methodology
+- **validation isn't read-only for our judges, who can run code; ASB's phase numbers had no Phase 1 or 2**
+  - was: ## Phase 3: Validation (Read-Only) ... **Ways to validate without running code:** ... ### Phase 4: Output
+  - now: ## Validation ... **Ways to validate:** ... - Test it with code: run the suspect function on a small input, recompute the metric from saved outputs, or check what data actually reaches the model ... ### Output
 
 
 ## Debater: `debater.md` + `access_tools_turn.md`; consultant: `consultant.md`
