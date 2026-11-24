@@ -295,3 +295,24 @@ def build_audit(directory: Path) -> dict:
         "unmatched_requests": unmatched,
         "prompt_selection": "Deterministic examples: one per codebase/extraction epoch, coverage label per codebase, prompt hash, fix verdict, and retry per codebase; smallest SHA-256 of bundle key in each group. This is a browsing aid, not an unbiased statistical sample.",
     }
+
+
+def render_audit(directory: Path) -> Path:
+    payload = build_audit(directory)
+    assets = files("debate_asb.viewer") / "static" / "review_audit"
+    payload["source"]["viewer_sources_sha256"] = {
+        name: sha((assets / name).read_text())
+        for name in ("audit.html", "audit.css", "audit.js")
+    }
+    html = (assets / "audit.html").read_text()
+    html = html.replace("/* AUDIT_CSS */", (assets / "audit.css").read_text())
+    html = html.replace("/* AUDIT_JS */", (assets / "audit.js").read_text())
+    html = html.replace(
+        "AUDIT_DATA",
+        json.dumps(
+            payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+        ).replace("<", "\\u003c"),
+    )
+    output = directory / "review-audit.html"
+    output.write_text(html)
+    return output
