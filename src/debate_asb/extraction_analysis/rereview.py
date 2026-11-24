@@ -557,3 +557,192 @@ def snapshot_sources(out: Path, label: str):
         destination / "hashes.json",
         {str(p.relative_to(ROOT)): sha(p.read_text()) for p in paths},
     )
+
+
+def result_files(out: Path) -> dict:
+    return {p.stem: read(p) for p in (out / "reviews").glob("*.json")}
+
+
+def build_results(out: Path) -> dict:
+    m = read(out / "manifest.json")
+    saved = result_files(out)
+    invalid = (
+        read(out / "invalid-responses.json")
+        if (out / "invalid-responses.json").exists()
+        else {}
+    )
+    jobs = {j["id"]: j for j in m["jobs"]}
+    items = []
+    for job in m["jobs"]:
+        record = saved.get(job["id"])
+        if record and (
+            record["packet_sha256"] != job["packet_sha256"]
+            or record["prompt_sha256"] != m["prompt_sha256"]
+        ):
+            raise ValueError("Review binding mismatch during render")
+        label = normalize_verdict(record["review"]) if record else "pending"
+        items.append(
+            {
+                **job,
+                "new_label": label,
+                "changed": None if label == "pending" else label != job["old_label"],
+                "new_review": record,
+                "invalid_attempts": invalid.get(job["id"], [])
+                if not record
+                or record.get("validation_status") == "counted_with_warnings"
+                else [],
+            }
+        )
+    lookup = {j["id"]: j for j in items}
+    cases = [
+        {
+            **case,
+            "new_complete": capture_status(
+                [lookup[j]["new_label"] for j in case["jobs"]], "complete"
+            ),
+            "new_present": capture_status(
+                [lookup[j]["new_label"] for j in case["jobs"]], "presence"
+            ),
+            "reviewed_bundles": sum(j in saved for j in case["jobs"]),
+            "total_bundles": len(case["jobs"]),
+        }
+        for case in m["cases"]
+    ]
+
+    def paired(rows, metric):
+        old_key, new_key = (
+            ("old_complete", "new_complete")
+            if metric == "complete"
+            else ("old_present", "new_present")
+        )
+        eligible = [
+            r for r in rows if r[old_key] is not None and r[new_key] is not None
+        ]
+        return {
+            "n": len(eligible),
+            "old": sum(r[old_key] for r in eligible),
+            "new": sum(r[new_key] for r in eligible),
+            "up": sum(not r[old_key] and r[new_key] for r in eligible),
+            "down": sum(r[old_key] and not r[new_key] for r in eligible),
+            "unresolved": len(rows) - len(eligible),
+        }
+
+    variants = []
+    for variant in m["variants"]:
+        rows = [c for c in cases if c["variant"] == variant["id"]]
+        by_sample = []
+        for sid in sorted({r["sample_id"] for r in rows}):
+            subset = [r for r in rows if r["sample_id"] == sid]
+            by_sample.append(
+                {
+                    "sample_id": sid,
+                    "epochs": len(subset),
+                    "complete": paired(subset, "complete"),
+                    "presence": paired(subset, "presence"),
+                    "old_any_complete": any(r["old_complete"] is True for r in subset),
+                    "new_any_complete": True
+                    if any(r["new_complete"] is True for r in subset)
+                    else None
+                    if any(r["new_complete"] is None for r in subset)
+                    else False,
+                }
+            )
+        variant_items = [lookup[j] for r in rows for j in r["jobs"]]
+        variants.append(
+            {
+                **variant,
+                "epochs": len(rows),
+                "codebases": len(by_sample),
+                "complete": paired(rows, "complete"),
+                "presence": paired(rows, "presence"),
+                "by_sample": by_sample,
+                "bundles": len(variant_items),
+                "changed_bundles": sum(i["changed"] is True for i in variant_items),
+                "reviewed_bundles": sum(
+                    i["new_review"] is not None for i in variant_items
+                ),
+            }
+        )
+    accounting = [read(p) for p in (out / "logs").glob("launch-*/accounting.json")]
+    policy = (
+        read(out / "scoring-policy.json")
+        if (out / "scoring-policy.json").exists()
+        else None
+    )
+    example_ids = dict.fromkeys(
+        [next(j["id"] for j in items if j["variant"] == v["id"]) for v in variants]
+        + [
+            next(j["id"] for j in items if j["sample_id"] == sid)
+            for sid in sorted(m["references"])
+        ]
+    )
+    return {
+        "schema_version": 1,
+        "title": "Single-bundle re-review",
+        "created_at": m["created_at"],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "prompt": (out / "prompt.md").read_text(),
+        "prompt_sha256": m["prompt_sha256"],
+        "model": m["model"],
+        "provider": m["provider"],
+        "scope": m["scope"],
+        "aggregation": m["aggregation"],
+        "scoring_policy": {
+            k: v for k, v in policy.items() if k != "strict_review_file_sha256"
+        }
+        if policy
+        else None,
+        "prompt_examples": [
+            {"job_id": key, "packet": read(out / "packets" / f"{key}.json")}
+            for key in example_ids
+        ],
+        "sources": m["source_reports"],
+        "git_revision": m["git_revision"],
+        "references": m["references"],
+        "variants": variants,
+        "cases": cases,
+        "items": items,
+        "counts": {
+            "total": len(items),
+            "reviewed": len(saved),
+            "invalid": sum(
+                not i["new_review"] and bool(i["invalid_attempts"]) for i in items
+            ),
+            "scored_with_warnings": sum(
+                bool(r.get("citation_warnings") or r.get("schema_warnings"))
+                for r in saved.values()
+            ),
+            "strict_validation_passed": sum(
+                not (r.get("citation_warnings") or r.get("schema_warnings"))
+                for r in saved.values()
+            ),
+            "changed": sum(i["changed"] is True for i in items),
+            "old_labels": dict(Counter(i["old_label"] for i in items)),
+            "new_labels": dict(Counter(i["new_label"] for i in items)),
+            "billed_usd": sum(a["billed_usd"] for a in accounting),
+            "api_calls": sum(a["api_calls"] for a in accounting),
+        },
+        "complete": len(saved) == len(items),
+    }
+
+
+def render(out: Path) -> Path:
+    data = build_results(out)
+    assets = files("debate_asb.viewer") / "static" / "review_comparison"
+    if not (assets / "report.html").is_file():
+        return out / "report.html"
+    html = (
+        (assets / "report.html")
+        .read_text()
+        .replace("/* REVIEW_CSS */", (assets / "report.css").read_text())
+        .replace("/* REVIEW_JS */", (assets / "report.js").read_text())
+    )
+    html = html.replace(
+        "REVIEW_DATA",
+        json.dumps(
+            data, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+        ).replace("<", "\\u003c"),
+    )
+    write_json(out / "results.json", data)
+    write_text(out / "report.html", html)
+    return out / "report.html"
