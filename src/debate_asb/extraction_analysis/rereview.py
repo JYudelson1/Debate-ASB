@@ -563,6 +563,150 @@ def result_files(out: Path) -> dict:
     return {p.stem: read(p) for p in (out / "reviews").glob("*.json")}
 
 
+def run_reviews(
+    out: Path, concurrency: int = 96, attempts: int = 3, batch_size: int = 256
+):
+    manifest = read(out / "manifest.json")
+    if manifest.get("model") != MODEL or manifest.get("provider") != PROVIDER:
+        raise ValueError(
+            "Frozen reviewer model/provider differs from current configuration"
+        )
+    load_dotenv(ROOT / ".env")
+    prompt = (out / "prompt.md").read_text()
+    if sha(prompt) != manifest["prompt_sha256"]:
+        raise ValueError("Frozen prompt changed")
+    check_openrouter_account()
+    jobs = {j["id"]: j for j in manifest["jobs"]}
+    for job in jobs.values():
+        if (
+            sha((out / "packets" / f"{job['id']}.json").read_text())
+            != job["packet_sha256"]
+        ):
+            raise ValueError(f"Frozen packet changed: {job['id']}")
+    for attempt in range(1, attempts + 1):
+        accepted = result_files(out)
+        for key, result in accepted.items():
+            if (
+                key not in jobs
+                or result["packet_sha256"] != jobs[key]["packet_sha256"]
+                or result["prompt_sha256"] != manifest["prompt_sha256"]
+                or result.get("model") != manifest["model"]
+                or result.get("provider") != manifest["provider"]
+            ):
+                raise ValueError(f"Completed review drift: {key}")
+        pending = [j for j in jobs.values() if j["id"] not in accepted]
+        if not pending:
+            break
+        for offset in range(0, len(pending), batch_size):
+            batch = pending[offset : offset + batch_size]
+            launch = len(list((out / "logs").glob("launch-*"))) + 1
+            log_dir = out / "logs" / f"launch-{launch:04d}"
+            snapshot_sources(out, f"launch-{launch:04d}")
+            write_json(
+                out / "progress.json",
+                {
+                    "completed": len(result_files(out)),
+                    "total": len(jobs),
+                    "launch": launch,
+                    "attempt": attempt,
+                    "batch": len(batch),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            print(
+                f"Launch {launch}: {len(batch)} requests; {len(result_files(out))}/{len(jobs)} accepted",
+                flush=True,
+            )
+
+            @solver
+            def review_bundle():
+                async def solve(state, _):
+                    spec = StudyModelSpec(
+                        MODEL,
+                        PROVIDER,
+                        namespace=f"{out}/launch-{launch}/{state.sample_id}",
+                    )
+                    response = await generate(
+                        Participant(spec),
+                        "single_bundle_reviewer",
+                        [
+                            ChatMessageSystem(content=prompt),
+                            ChatMessageUser(content=state.input_text),
+                        ],
+                    )
+                    store().set("review_raw", response.completion)
+                    value = validate_review(
+                        response.completion, json.loads(state.input_text)
+                    )
+                    job = jobs[str(state.sample_id)]
+                    write_json(
+                        out / "reviews" / f"{state.sample_id}.json",
+                        {
+                            "review": value,
+                            "packet_sha256": job["packet_sha256"],
+                            "prompt_sha256": manifest["prompt_sha256"],
+                            "bundle_sha256": job["bundle_sha256"],
+                            "model": MODEL,
+                            "provider": PROVIDER,
+                            "launch": launch,
+                            "attempt": attempt,
+                            "accepted_at": datetime.now(timezone.utc).isoformat(),
+                            "usage": response.usage.model_dump()
+                            if response.usage
+                            else None,
+                        },
+                    )
+                    return state
+
+                return solve
+
+            logs = eval(
+                Task(
+                    dataset=[
+                        Sample(
+                            id=j["id"],
+                            input=(out / "packets" / f"{j['id']}.json").read_text(),
+                        )
+                        for j in batch
+                    ],
+                    solver=review_bundle(),
+                ),
+                model="none",
+                log_dir=str(log_dir),
+                log_model_api=True,
+                display="none",
+                fail_on_error=False,
+                max_samples=concurrency,
+                max_connections=concurrency,
+            )
+            spend = log_spend(logs[0])
+            write_json(
+                log_dir / "accounting.json",
+                {
+                    "billed_usd": spend.usd,
+                    "api_calls": spend.api_calls,
+                    "cache_hits": spend.cache_hits,
+                    "unlogged_calls": spend.unlogged_calls,
+                    "unpinned_calls": spend.unpinned_calls,
+                    "served_by": [
+                        {"model": k[0], "pinned": k[1], "served": k[2], "calls": v}
+                        for k, v in spend.served_by.items()
+                    ],
+                },
+            )
+            print(
+                f"Finished launch {launch}: {len(result_files(out))}/{len(jobs)} accepted; ${spend.usd:.4f} billed",
+                flush=True,
+            )
+            render(out)
+    render(out)
+    missing = len(jobs) - len(result_files(out))
+    if missing:
+        raise RuntimeError(
+            f"{missing} reviews still missing; inspect preserved failed attempts"
+        )
+
+
 def build_results(out: Path) -> dict:
     m = read(out / "manifest.json")
     saved = result_files(out)
@@ -746,3 +890,32 @@ def render(out: Path) -> Path:
     write_json(out / "results.json", data)
     write_text(out / "report.html", html)
     return out / "report.html"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=["prepare", "run", "render", "status"])
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--comparison", type=Path)
+    parser.add_argument("--debate", type=Path)
+    parser.add_argument("--concurrency", type=int, default=96)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--attempts", type=int, default=3)
+    args = parser.parse_args()
+    out = args.out.resolve()
+    if args.action == "prepare":
+        if not args.comparison or not args.debate:
+            parser.error("prepare requires both source reports")
+        m = prepare(out, args.comparison.resolve(), args.debate.resolve())
+        print(json.dumps(m["scope"]))
+    elif args.action == "run":
+        run_reviews(out, args.concurrency, args.attempts, args.batch_size)
+    elif args.action == "render":
+        print(render(out))
+    else:
+        m = read(out / "manifest.json")
+        print(json.dumps({"reviewed": len(result_files(out)), "total": len(m["jobs"])}))
+
+
+if __name__ == "__main__":
+    main()
