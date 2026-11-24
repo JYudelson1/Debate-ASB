@@ -6,13 +6,6 @@ You access them through three read-only tools: `list_files`, `read_file` and `se
 
 You can make up to {max_steps} rounds of tool calls. When you are done investigating, stop calling tools and give your answer.
 
-### Efficient File Reading
+### Reading files
 
-**Do NOT read entire large files.** Reading whole files will overflow your context window and cause failures.
-
-**Workflow for understanding code:**
-1. **Use `search` first** to locate relevant code
-2. **Read only relevant line ranges** once you've found them, with `read_file`'s `start_line` and `num_lines`
-3. **For files >200 lines:** Always search within the file first, then read just the function or section you need
-
-**This is critical for your success.** Models that try to read entire codebases run out of context and fail.
+`read_file` shows up to 1200 lines (about 63 KB) per call; if a file is longer, the last line says where to continue. Read the paper and the code that produces the key results in full. For very large files such as datasets, logs and caches, use `search` or read only the parts you need.
