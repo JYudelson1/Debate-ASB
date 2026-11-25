@@ -19,6 +19,8 @@ from pathlib import Path
 import yaml
 from inspect_ai.dataset import Sample
 
+from debate_asb.artifacts.codebase import PATCH_MARKER
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ASB_ROOT = PROJECT_ROOT / "data" / "asb"
 RUBRIC_DIRS = [
@@ -87,7 +89,7 @@ def _workspace(sample_id: str, workspace: str) -> Path:
         )
     ).hexdigest()
     target = PATCHED_ROOT / sample_id
-    marker = target / ".asb_patch"
+    marker = target / PATCH_MARKER
     if marker.exists() and marker.read_text() == stamp:
         return target
     # Build in a temporary directory and rename, so concurrent runs never see
@@ -97,7 +99,7 @@ def _workspace(sample_id: str, workspace: str) -> Path:
     shutil.copytree(original, build, dirs_exist_ok=True, symlinks=True)
     for path, source in patches.items():
         shutil.copyfile(ASB_ROOT / source, build / path)
-    (build / ".asb_patch").write_text(stamp)
+    (build / PATCH_MARKER).write_text(stamp)
     if target.exists():
         shutil.rmtree(target)
     os.replace(build, target)
