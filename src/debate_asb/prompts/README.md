@@ -169,7 +169,10 @@ here), and "Running Code". Edits:
   - was: - ❌ Experiment pipelines (`python run_experiment.py`, `modal run run_experiments.py`)
   - now: - ❌ Experiment pipelines (`python run_experiment.py`)
 - **ADDED: our sandbox** (the tools, read-only /workspace, shared home
-  directory, no network/GPU, installed packages) and the step budget.
+  directory, no network/GPU, installed packages) and the step budget. The
+  packages are the codebase's own, at its `uv.lock` versions, CPU-only
+  (docker/build_envs.sh); also in `access_tools_execute_turn.md` and
+  `access_tools_pipeline.md`.
 
 `access_tools_execute_turn.md` (debaters, consultant) is NEW (ours): the same
 facts, condensed.

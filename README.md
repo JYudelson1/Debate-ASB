@@ -160,18 +160,23 @@ experiments" text. Details:
   goes in `~`. All participants in a sample share one sandbox, so they can see
   each other's scratch files.
 - Every command is killed after 300 seconds.
-- No network, no GPU. Python 3.12 with the packages ASB codebases most often
-  import, CPU-only: torch, torchvision, transformers, datasets, peft, the usual
-  scientific stack, and the openai/anthropic SDKs (so modules import; API calls
-  still fail). GPU-only packages (vllm, bitsandbytes, unsloth, nnsight,
-  transformer_lens, jax) aren't installed. ASB's own image isn't public; this
-  one is ours. Change packages in `docker/Dockerfile`; Inspect rebuilds it at
-  the start of each run.
+- No network, no GPU. Each ASB codebase has its own Python 3.12 environment,
+  built from its own `pyproject.toml` + `uv.lock` (`docker/build_envs.sh`), so
+  participants test its code with the package versions the paper used (e.g.
+  hop: transformers 4.43 + inspect_ai 0.3.99; negative: transformer_lens 2.17).
+  torch comes from PyTorch's CPU index at the locked version; GPU-only packages
+  (vllm, bitsandbytes, unsloth, xformers, CUDA libraries) are left out. When
+  the sandbox starts, `task.py` points `/opt/venv` (first on PATH) at the
+  sample's environment; other samples get the base Python (common ML
+  packages). Also installed: file, strings, xxd, unzip, jq, ripgrep, sqlite3.
+  ASB's own image isn't public; this one is ours. Change it in `docker/`;
+  Inspect rebuilds it at the start of a run if it's missing.
 - So participants can import modules, test functions on small inputs, and
   analyse saved results, which is roughly ASB's "no experiments" regime. They
   can't train, use GPUs, or call APIs (ASB's "full experiments" regime had
   Modal GPUs and API keys).
-- The image is ~2.4 GB and builds on first use (a few minutes).
+- The image is ~17 GB (13 distinct environments) and builds on first use;
+  it needs the ASB codebases fetched (`scripts/fetch_asb.sh`).
 - **Idea, not built:** a separate sandbox per participant, so debaters can't
   see or plant each other's scratch files. Inspect supports several
   containers per sample (one service per participant in `docker/compose.yaml`,
