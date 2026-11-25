@@ -135,8 +135,8 @@ def test_real_sandbox(script, tmp_path, monkeypatch):
         "touch /workspace/x",
         "echo scratch > ~/notes && cat ~/notes",
         "python -c \"import urllib.request; urllib.request.urlopen('http://1.1.1.1', timeout=5)\"",
-        "python -c 'import numpy, pandas; print(numpy.__version__)'",
-        "python -c 'import torch, transformers; print(torch.cuda.is_available())'",
+        "python -c 'import numpy; print(numpy.__version__)'",
+        "python -c 'import torch; print(torch.__version__, torch.cuda.is_available())'",
         "sleep 10; echo finished",
     ]
     script(
@@ -156,7 +156,8 @@ def test_real_sandbox(script, tmp_path, monkeypatch):
     assert "scratch" in scratch
     assert "[exit code 0]" not in network  # no network
     assert "[exit code 0]" in numpy
-    assert "[exit code 0]" in torch and "False" in torch  # CPU-only torch
+    # lazy_alpha's own environment: its locked torch, CPU-only.
+    assert "[exit code 0]" in torch and "2.10.0+cpu False" in torch
     assert "killed after 5 seconds" in sleep and "finished" not in sleep
 
 
