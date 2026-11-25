@@ -161,16 +161,20 @@ async def generate(
     runner attributes real spend to roles afterwards.
 
     A generation the provider failed partway through (OpenRouter's finish_reason
-    "error", which Inspect reports as stop_reason "unknown" without an error), or
-    one that ran into the output-token limit, is retried up to GENERATION_RETRIES
-    times; otherwise its truncated, empty or runaway reply would pass for the
-    participant's answer.
+    "error", which Inspect reports as stop_reason "unknown" without an error),
+    one that ran into the output-token limit, or a text-only reply that is
+    broken (see broken_reply) is retried up to GENERATION_RETRIES times;
+    otherwise its truncated, empty or runaway reply would pass for the
+    participant's answer. A broken reply's retry is told what went wrong. If
+    every retry is broken too, its text is replaced by BROKEN_REPLY, so the junk
+    never reaches another participant (e.g. as a debater's argument).
     """
     attempt = 0
+    call_messages = messages
     while True:
         async with span(role, type="participant"):
             output = await participant.model.get_model().generate(
-                messages,
+                call_messages,
                 tools=tools,
                 tool_choice=tool_choice,
                 # Inspect caches the failed output too, so a retry must skip the cache.
@@ -186,7 +190,8 @@ async def generate(
         cost[role] = cost.get(role, 0.0) + participant.model.price().cost(output.usage)
         store().set("cost", cost)
 
-        if output.stop_reason not in RETRIED_STOP_REASONS:
+        broken = broken_reply(output)
+        if output.stop_reason not in RETRIED_STOP_REASONS and broken is None:
             break
         attempt += 1
         note(
@@ -194,9 +199,20 @@ async def generate(
             role=role,
             attempt=attempt,
             stop_reason=output.stop_reason,
+            **({"broken": broken} if broken else {}),
         )
         if attempt > GENERATION_RETRIES:
+            if broken:
+                output.message.content = BROKEN_REPLY
+                output.completion = BROKEN_REPLY
             break
+        # A broken reply's retry sees it and is told what went wrong; the
+        # conversation itself keeps only the reply that is finally used.
+        call_messages = (
+            [*messages, output.message, ChatMessageUser(content=BROKEN_RETRY)]
+            if broken
+            else messages
+        )
     messages.append(output.message)
     return output
 
@@ -205,6 +221,35 @@ GENERATION_RETRIES = 3
 # "max_tokens": a runaway once filled Luna's 65k-token output limit with repeated
 # tool-call text, and that text went into a debate as the debater's argument.
 RETRIED_STOP_REASONS = {"unknown", "max_tokens"}
+
+# Luna sometimes writes a tool call as text in its own format ("to=functions.run_bash
+# {...}") instead of calling the tool, and sometimes then repeats characters until
+# it stops ('"}"}"}...', ~130k characters). As a debater's last message, that text
+# was the argument the judge read (debates of 6-22 Oct 2026).
+LEAKED_TOOL_CALL = re.compile(r"\bto=functions\.\w+")
+# The same 1-8 characters 500 times in a row, up to the end of the reply: a
+# runaway never stops repeating (all 32 in our logs end that way), while quoted
+# data that repeats (e.g. an array of zeros) is followed by more text.
+RUNAWAY = re.compile(r"(.{1,8}?)\1{499,}\s*\Z", re.DOTALL)
+RUNAWAY_TAIL = 8 * 500 + 1000  # the longest run it needs to see, plus trailing space
+BROKEN_RETRY = (
+    "Your last message was not used: it contained a tool call written as text, "
+    "which was not executed, or repeated the same characters. Call tools through "
+    "the tool interface, or write your message as plain text."
+)
+BROKEN_REPLY = "[This reply was unusable (a tool call written as text, or repeated characters) and was removed.]"
+
+
+def broken_reply(output: ModelOutput) -> str | None:
+    """Why a text-only reply is unusable as a message, or None if it is fine."""
+    if output.message.tool_calls:
+        return None  # intermediate text next to real tool calls is never used
+    text = output.completion or ""
+    if LEAKED_TOOL_CALL.search(text):
+        return "tool call written as text"
+    if RUNAWAY.search(text[-RUNAWAY_TAIL:]):
+        return "repeated characters"
+    return None
 
 
 OUT_OF_TOOL_CALLS = "You are out of tool calls. Give your answer now."

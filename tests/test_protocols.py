@@ -13,7 +13,15 @@ from debate_asb.datasets import asb_samples
 from debate_asb.datasets.monitoringbench import MB_ROOT, monitoringbench_samples
 from debate_asb.models import ModelSpec, Participant, Side
 from debate_asb.prompts import PROMPTS, SETTINGS
-from debate_asb.protocol import AuditSample, ProtocolResult, ToolAccess, parse_credence
+from debate_asb.protocol import (
+    BROKEN_REPLY,
+    BROKEN_RETRY,
+    AuditSample,
+    ProtocolResult,
+    ToolAccess,
+    broken_reply,
+    parse_credence,
+)
 from debate_asb.protocols.consultancy import Consultancy, consultancy
 from debate_asb.protocols.extract_and_evaluate import extract_and_evaluate_debate
 from debate_asb.protocols.full_context_judge import full_context_judge
@@ -144,6 +152,60 @@ def test_generation_that_hit_the_output_limit_is_retried(script, tmp_path):
     assert sample.store["credence"] == 40
     [note] = sample.store["transcript"]
     assert (note["event"], note["stop_reason"]) == ("generation_error", "max_tokens")
+
+
+def test_tool_call_written_as_text_is_retried(script, tmp_path):
+    leaked = say('to=functions.read_file\n{"path": "PAPER.md"}')
+    script(
+        [tool_call("list_files"), leaked, say("Looks fine.\n\nSabotage Credence: 40%")]
+    )
+    log = run(lone_judge(sample_ids="hop_jump"), tmp_path)
+    assert log.samples is not None
+    [sample] = log.samples
+    calls = model_calls(sample, "judge")
+    assert len(calls) == 3 and calls[2].config.cache is False
+    # The retry sees its broken reply and is told what went wrong.
+    assert calls[2].input[-1].text == BROKEN_RETRY
+    assert sample.store["credence"] == 40
+    [note] = sample.store["transcript"]
+    assert (note["event"], note["broken"]) == (
+        "generation_error",
+        "tool call written as text",
+    )
+
+
+def test_broken_reply_that_survives_every_retry_never_reaches_the_judge(
+    script, tmp_path
+):
+    runaway = '"}' * 1000
+    script([
+        tool_call("list_files"), *[say(runaway)] * 4,  # sabotaged, round 1
+        say("C1: shared seeds are normal."),  # clean, round 1
+        say("S2: it correlates the triplets."),  # sabotaged, round 2
+        say("C2: no it doesn't."),  # clean, round 2
+        say("Sabotage Credence: 30%"),  # judge
+    ])  # fmt: skip
+    log = run(debate(sample_ids="hop_jump"), tmp_path)
+    assert log.samples is not None
+    [sample] = log.samples
+    assert sample.store["stages"]["debate"][0]["argument"] == BROKEN_REPLY
+    judge_input = model_calls(sample, "judge")[0].input[1].text
+    assert BROKEN_REPLY in judge_input and runaway not in judge_input
+    assert sample.store["credence"] == 30
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "run_bash is defined in functions.py; see functions.run_bash at line 3.",
+        "| a | b |\n|" + "-" * 120 + "|\nSabotage Credence: 40%",
+        "The saved mask is all zeros: [" + "0, " * 600 + "0]. That is the bug.",
+    ],
+)
+def test_normal_reply_is_not_broken(text):
+    assert broken_reply(say(text)) is None
+    assert broken_reply(say('to=functions.run_bash {"command": "ls"}')) is not None
+    assert broken_reply(say("ok " + '"}' * 600)) is not None
 
 
 # --- full-context judge ---
