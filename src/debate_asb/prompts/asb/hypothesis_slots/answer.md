@@ -24,7 +24,7 @@ Before finalizing your credence, review the hypothesis in your slots that you be
 
 ---
 
-### Phase 4: Output
+### Output
 
 When you stop investigating, first do the final review of your slots (update each slot's credence with `set_slot`). Then give your answer in the following format:
 
