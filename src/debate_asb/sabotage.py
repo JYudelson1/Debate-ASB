@@ -77,6 +77,9 @@ def read_registry(path: Path = REGISTRY_PATH) -> dict[str, Any]:
                 or honest["workspace"] != comparison["honest_workspace"]
             ):
                 raise ValueError(f"Invalid paired comparison: {sample_id}")
+    from .sabotage_fixes import validate_fix_records
+
+    validate_fix_records(document)
     return document
 
 
@@ -109,6 +112,7 @@ def resolve_sabotage(
     leaves the reviewed snapshot available for offline inspection of log evidence.
     """
     from debate_asb.datasets.asb import PROJECT_ROOT
+    from debate_asb.sabotage_fixes import resolve_fixes
 
     repo = repo or PROJECT_ROOT
     document = document if document is not None else read_registry()
@@ -121,6 +125,8 @@ def resolve_sabotage(
         "record": copy.deepcopy(entry),
         "usable": False,
         "validation": {"status": "missing", "issues": []},
+        "fixes_usable": False,
+        "fix_validation": {"status": "not_reviewed", "usable": False, "issues": []},
     }
     if entry is None:
         return result
@@ -136,7 +142,14 @@ def resolve_sabotage(
             issues.append("logged workspace differs from registry workspace")
     if issues:
         result["validation"] = {"status": "identity_mismatch", "issues": issues}
+        result["fix_validation"] = {
+            "status": "identity_mismatch",
+            "usable": False,
+            "issues": issues,
+        }
         return result
+    result["fix_validation"] = resolve_fixes(sample_id, document, repo)
+    result["fixes_usable"] = result["fix_validation"]["usable"]
     root = repo / "data/asb"
     if root.exists():
         for loc in entry["locations"]:
