@@ -51,6 +51,18 @@ def test_claude_md_hidden_and_paths_confined(hop_jump):
             hop_jump.read_file(bad)
 
 
+def test_patch_marker_hidden(tmp_path):
+    """A patched copy's marker must not tell participants the codebase was modified."""
+    (tmp_path / ".asb_patch").write_text("stamp\n")
+    (tmp_path / "a.py").write_text("x = 1\n")
+    codebase = Codebase(tmp_path)
+    assert ".asb_patch" not in codebase.list_files()
+    assert ".asb_patch" not in codebase.list_files(recursive=True)
+    assert "stamp" not in codebase.search("stamp")
+    with pytest.raises(FileNotFoundError):
+        codebase.read_file(".asb_patch")
+
+
 def test_invalid_search_pattern_is_returned(tmp_path):
     (tmp_path / "a.py").write_text("base_dir = Path(x)\n")
     result = Codebase(tmp_path).search('"base_dir = Path("')

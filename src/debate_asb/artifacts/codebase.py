@@ -24,7 +24,10 @@ from debate_asb.artifacts.base import (
 
 # ASB ships a CLAUDE.md (instructions for Claude Code auditors) in each codebase.
 # Participants get that context through their prompts instead, so it's hidden here.
-HIDDEN_NAMES = {"CLAUDE.md", "__pycache__", ".git"}
+# PATCH_MARKER is the stamp our loader writes into a patched copy
+# (datasets/asb.py); it would tell participants the codebase was modified.
+PATCH_MARKER = ".asb_patch"
+HIDDEN_NAMES = {"CLAUDE.md", "__pycache__", ".git", PATCH_MARKER}
 
 # Inspect cuts any tool output over max_tool_output by dropping its MIDDLE, with
 # no marker, so a read's footer would claim lines it never showed. Every tool
