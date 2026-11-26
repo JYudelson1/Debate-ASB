@@ -8,6 +8,9 @@ A few samples ship with files that don't match their own saved results. For
 those, the sample points to a patched copy (data/asb_patched/<id>/) with the
 right files laid over it, all taken from ASB itself (see PATCHES and
 docs/asb-known-issues.md).
+
+Reviewed rubric corrections are applied to metadata at load time; logs retain
+the original annotations (see docs/asb-rubric-corrections.md).
 """
 
 import hashlib
@@ -20,6 +23,7 @@ import yaml
 from inspect_ai.dataset import Sample
 
 from debate_asb.artifacts.codebase import PATCH_MARKER
+from debate_asb.datasets.asb_rubrics import corrected_entry
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ASB_ROOT = PROJECT_ROOT / "data" / "asb"
@@ -142,6 +146,7 @@ def asb_samples(sample_ids: list[str] = CORE_SAMPLE_IDS) -> list[Sample]:
     samples = []
     for sample_id in sample_ids:
         label, entry, rubric = entries[sample_id]
+        entry, correction = corrected_entry(sample_id, entry)
         samples.append(
             Sample(
                 id=sample_id,
@@ -157,6 +162,8 @@ def asb_samples(sample_ids: list[str] = CORE_SAMPLE_IDS) -> list[Sample]:
                     "paper_name": rubric.get("paper_name"),
                     # The answer key. Never shown to participants.
                     "answer_key": entry.get("sabotage"),
+                    "rubric": entry.get("rubric"),
+                    **({"rubric_correction": correction} if correction else {}),
                 },
             )
         )
