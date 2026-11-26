@@ -749,3 +749,38 @@ def run(directory: Path, max_attempts: int = 1) -> dict:
     if not output["complete"]:
         raise RuntimeError("Incomplete pilot; inspect failed logs before resuming")
     return output
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=["prepare", "run", "report"])
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--bundles", type=int, choices=[4, 6, 8], default=6)
+    args = parser.parse_args()
+    result = (
+        prepare(args.out.resolve(), args.bundles)
+        if args.action == "prepare"
+        else {"run": run, "report": report}[args.action](args.out.resolve())
+    )
+    print(
+        json.dumps(
+            {
+                k: v
+                for k, v in result.items()
+                if k
+                in {
+                    "status",
+                    "complete",
+                    "completed",
+                    "expected",
+                    "nominal_total_usd",
+                    "recorded_billed_usd",
+                }
+            },
+            indent=2,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()
