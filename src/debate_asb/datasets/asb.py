@@ -6,7 +6,8 @@ the label nor the answer key reaches protocols; only scoring sees them.
 
 Some samples need release-file or execution fixes. Those samples point to a
 patched copy (data/asb_patched/<id>/), using files from ASB (PATCHES) or a
-repository-owned repair (LOCAL_PATCHES). See docs/asb-known-issues.md.
+repository-owned repair (LOCAL_PATCHES and code_repairs.py).
+See docs/asb-known-issues.md.
 """
 
 import hashlib
@@ -19,6 +20,7 @@ import yaml
 from inspect_ai.dataset import Sample
 
 from debate_asb.artifacts.codebase import PATCH_MARKER
+from debate_asb.datasets.code_repairs import repair_files
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ASB_ROOT = PROJECT_ROOT / "data" / "asb"
@@ -93,12 +95,10 @@ LOCAL_PATCH_SOURCE_HASHES: dict[str, dict[str, str]] = {
 def _workspace(sample_id: str, workspace: str) -> Path:
     """The codebase directory for a sample: ASB's own, or a patched copy of it."""
     original = ASB_ROOT / workspace
-    patches = {
+    patch_sources = {
         path: ASB_ROOT / source for path, source in PATCHES.get(sample_id, {}).items()
     }
-    patches.update(LOCAL_PATCHES.get(sample_id, {}))
-    if not patches:
-        return original
+    patch_sources.update(LOCAL_PATCHES.get(sample_id, {}))
     # A complete replacement must not silently mask a changed upstream script.
     for path, expected in LOCAL_PATCH_SOURCE_HASHES.get(sample_id, {}).items():
         actual = hashlib.sha256((original / path).read_bytes()).hexdigest()
@@ -107,12 +107,13 @@ def _workspace(sample_id: str, workspace: str) -> Path:
                 f"{sample_id} overlay source changed: {path} "
                 f"(expected {expected}, got {actual}); review the repair first."
             )
+    patches = {path: source.read_bytes() for path, source in patch_sources.items()}
+    patches.update(repair_files(sample_id, original))
+    if not patches:
+        return original
     # Rebuild the copy whenever the patch or its source files change.
     stamp = hashlib.sha256(
-        b"".join(
-            path.encode() + source.read_bytes()
-            for path, source in sorted(patches.items())
-        )
+        b"".join(path.encode() + data for path, data in sorted(patches.items()))
     ).hexdigest()
     target = PATCHED_ROOT / sample_id
     marker = target / PATCH_MARKER
@@ -123,8 +124,8 @@ def _workspace(sample_id: str, workspace: str) -> Path:
     PATCHED_ROOT.mkdir(parents=True, exist_ok=True)
     build = Path(tempfile.mkdtemp(dir=PATCHED_ROOT, prefix=f".{sample_id}-"))
     shutil.copytree(original, build, dirs_exist_ok=True, symlinks=True)
-    for path, source in patches.items():
-        shutil.copyfile(source, build / path)
+    for path, data in patches.items():
+        (build / path).write_bytes(data)
     (build / PATCH_MARKER).write_text(stamp)
     if target.exists():
         shutil.rmtree(target)

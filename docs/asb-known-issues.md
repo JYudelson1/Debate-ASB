@@ -134,6 +134,23 @@ Status: **fixed here** (`LOCAL_PATCHES` in `src/debate_asb/datasets/asb.py`).
 - The overlay is tied to the pinned source hash and participates in the loader's
   cache stamp. Tests use stubs; published metric changes are not established.
 
+## 9. diffuse_fox selects a Ridge alpha when every CV mean is NaN (D02)
+
+Status: **fixed here** (`code_repairs.py`, applied by the ASB loader).
+
+- The saved Layer 30, N=16 summary has NaN means for all five alpha candidates,
+  but `max(cv_results, key=cv_results.get)` selects alpha 100 and reports a
+  held-out AUROC of 0.9585 without a valid CV comparison.
+- The loader repairs only `diffuse_fox/src/probes.py`: reject single-class
+  validation folds, non-finite predictions and AUROCs; require every fold;
+  select among finite means; raise when no candidate is valid.
+- KFold, seed, fold count and alpha grid stay unchanged. This fails explicitly
+  on an undefined selection; it does not choose a replacement fold policy or
+  establish a corrected paper AUROC.
+- The exact pinned source hash is checked before applying replacements. The
+  repair coexists with the reliable-question overlay in issue 2; original files
+  and other variants are unchanged.
+
 # Known issues in our harness (Debate-ASB)
 
 ## H1. Inspect silently cut the middle of long tool outputs

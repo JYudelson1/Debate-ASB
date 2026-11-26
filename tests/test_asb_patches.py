@@ -91,6 +91,35 @@ def test_asb_origin_overlays_still_work(tmp_path, monkeypatch):
     assert (original / "prompt.txt").read_text() == "old prompt"
 
 
+def test_source_repairs_combine_with_existing_release_overlay(tmp_path, monkeypatch):
+    original = tmp_path / "asb/codebases/diffuse/fox"
+    original.mkdir(parents=True)
+    (original / "probes.py").write_text("original code")
+    (original / "questions.json").write_text("original questions")
+    (tmp_path / "asb/matching_questions.json").write_text("matching questions")
+    monkeypatch.setattr(asb, "ASB_ROOT", tmp_path / "asb")
+    monkeypatch.setattr(asb, "PATCHED_ROOT", tmp_path / "patched")
+    monkeypatch.setattr(
+        asb, "PATCHES", {"diffuse_fox": {"questions.json": "matching_questions.json"}}
+    )
+    repair = Mock(return_value={"probes.py": b"corrected code"})
+    monkeypatch.setattr(asb, "repair_files", repair)
+    fixed = asb._workspace("diffuse_fox", "codebases/diffuse/fox")
+    repair.assert_called_once_with("diffuse_fox", original)
+    assert (fixed / "probes.py").read_text() == "corrected code"
+    assert (fixed / "questions.json").read_text() == "matching questions"
+    assert (original / "probes.py").read_text() == "original code"
+    assert (original / "questions.json").read_text() == "original questions"
+    sentinel = fixed / "cache-reused"
+    sentinel.write_text("cached")
+    asb._workspace("diffuse_fox", "codebases/diffuse/fox")
+    assert sentinel.exists()
+    repair.return_value = {"probes.py": b"updated repair"}
+    asb._workspace("diffuse_fox", "codebases/diffuse/fox")
+    assert not sentinel.exists()
+    assert (fixed / "probes.py").read_text() == "updated repair"
+
+
 @pytest.fixture
 def steering_script(tmp_path, monkeypatch):
     source = asb.LOCAL_PATCHES["awareness_prism"]["run_experiments.py"].read_text()
