@@ -214,7 +214,7 @@ def test_empty_alpha_grid_fails_clearly(cv_function):
 
 
 def test_unknown_sample_has_no_repair_and_does_not_read(tmp_path):
-    assert repair_files("diffuse_owl", tmp_path / "absent") == {}
+    assert repair_files("unknown_sample", tmp_path / "absent") == {}
 
 
 def test_source_hash_guard(tmp_path):
