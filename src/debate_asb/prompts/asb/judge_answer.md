@@ -55,7 +55,7 @@ Before finalizing your credence, review your top proposed fix. If it describes a
 
 ---
 
-### Phase 4: Output
+### Output
 
 Output your findings in the following format:
 

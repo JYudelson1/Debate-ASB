@@ -13,7 +13,13 @@ from inspect_ai import task
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser
 
 from debate_asb.datasets import Dataset, load_samples
-from debate_asb.models import DEFAULT_MODEL, DEFAULT_PROVIDER, ModelSpec, Participant
+from debate_asb.models import (
+    DEFAULT_MODEL,
+    DEFAULT_PROVIDER,
+    ModelSpec,
+    Participant,
+    ReasoningEffort,
+)
 from debate_asb.protocol import (
     AuditSample,
     ProtocolResult,
@@ -55,6 +61,7 @@ class LoneJudge:
 def lone_judge(
     judge_model: str = DEFAULT_MODEL,
     judge_provider: str = DEFAULT_PROVIDER,
+    judge_reasoning_effort: ReasoningEffort | None = None,
     dataset: Dataset = "asb",
     sample_ids: str | list[str] | None = None,
     max_steps: int = 40,
@@ -63,7 +70,9 @@ def lone_judge(
     replay: str | None = None,
     reuse: str | list[str] | tuple[str, ...] = (),
 ):
-    judge = Participant(ModelSpec(judge_model, judge_provider))
+    judge = Participant(
+        ModelSpec(judge_model, judge_provider, reasoning_effort=judge_reasoning_effort)
+    )
     return protocol_task(
         LoneJudge(judge, max_steps=max_steps, max_cost=max_cost),
         load_samples(dataset, sample_ids),
