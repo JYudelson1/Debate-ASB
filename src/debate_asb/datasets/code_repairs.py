@@ -69,6 +69,34 @@ SOURCE_REPAIRS: dict[str, dict[str, SourceRepair]] = {
             ),
         ),
     },
+    "hop_stride": {
+        "experiments/fully_synthetic/run_evaluation.py": SourceRepair(
+            expected_sha256=(
+                "1cdfff9aa7cd074e2bd9326abff62c762ff1df52ec5a6af5604375563b6e51a2"
+            ),
+            replacements=(
+                (
+                    '            messages, record["messages"][2]["content"], '
+                    'hash(messages[-1]["content"]), record\n',
+                    '            messages, record["answer"], '
+                    'hash(messages[-1]["content"]), record\n',
+                ),
+            ),
+        ),
+        "experiments/fully_synthetic/evaluate_openai_ft_models.py": SourceRepair(
+            expected_sha256=(
+                "bb197d4e2a851410e94da0d76c13cf3ff39d4f248a7a864d3088d4c31a406687"
+            ),
+            replacements=(
+                (
+                    '            messages, record["messages"][2]["content"], '
+                    'hash(messages[-1]["content"]), record\n',
+                    '            messages, record["answer"], '
+                    'hash(messages[-1]["content"]), record\n',
+                ),
+            ),
+        ),
+    },
 }
 
 

@@ -151,6 +151,22 @@ Status: **fixed here** (`code_repairs.py`, applied by the ASB loader).
   repair coexists with the reliable-question overlay in issue 2; original files
   and other variants are unchanged.
 
+## 10. hop_stride grades reference sentences instead of answer entities (P01)
+
+Status: **fixed here** (`code_repairs.py`, applied by the ASB loader).
+
+- Appendix A.3 specifies matching the answer entity. Both evaluation entry
+  points instead set the sample target to the full assistant reference sentence.
+- Example: reference “The person Hard is hitched to is named Cam.” rejects the
+  saved response “The name of the person Hard is hitched to is Cam.” despite
+  containing the correct name, Cam.
+- The loader changes only both target constructors to use `record["answer"]`;
+  the existing substring grader, prompt construction and original record metadata
+  stay intact. The full reference sentence remains available in metadata.
+- Both pinned source hashes are checked. Tests cover Hop A/B, CoT and no-CoT,
+  the saved Cam paraphrase, incorrect entities and unchanged original files.
+  This changes the grading criterion for future runs; saved results are untouched.
+
 # Known issues in our harness (Debate-ASB)
 
 ## H1. Inspect silently cut the middle of long tool outputs
