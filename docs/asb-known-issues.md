@@ -119,6 +119,21 @@ Status: **environment**.
 - hop and preference fine-tune GPT models through OpenAI's fine-tuning API,
   which our organization can no longer use.
 
+## 8. awareness_prism does not regenerate its bundled steering vector
+
+Status: **fixed here** (`LOCAL_PATCHES` in `src/debate_asb/datasets/asb.py`).
+
+- `--regenerate-steering-vector` calls a remote generator that returns the
+  image's existing tensor; the extraction helper also skips an existing output
+  path, and shards refuse to replace their bundled tensor.
+- The loader overlays a corrected `run_experiments.py` only for
+  `awareness_prism`: forward the force flag, extract into a new temporary path,
+  validate the returned bytes, and atomically replace each destination file.
+- Default cache reuse is preserved; every shard uses the coordinator's selected
+  bytes. The original ASB checkout and other variants are unchanged.
+- The overlay is tied to the pinned source hash and participates in the loader's
+  cache stamp. Tests use stubs; published metric changes are not established.
+
 # Known issues in our harness (Debate-ASB)
 
 ## H1. Inspect silently cut the middle of long tool outputs

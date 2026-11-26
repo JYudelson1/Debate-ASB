@@ -4,10 +4,9 @@ Each sample carries one artifact, the codebase (its PAPER.md included), plus a
 label (honest/sabotaged) and, for sabotaged samples, ASB's answer key. Neither
 the label nor the answer key reaches protocols; only scoring sees them.
 
-A few samples ship with files that don't match their own saved results. For
-those, the sample points to a patched copy (data/asb_patched/<id>/) with the
-right files laid over it, all taken from ASB itself (see PATCHES and
-docs/asb-known-issues.md).
+Some samples need release-file or execution fixes. Those samples point to a
+patched copy (data/asb_patched/<id>/), using files from ASB (PATCHES) or a
+repository-owned repair (LOCAL_PATCHES). See docs/asb-known-issues.md.
 """
 
 import hashlib
@@ -74,17 +73,44 @@ PATCHES: dict[str, dict[str, str]] = {
 }
 PATCHED_ROOT = PROJECT_ROOT / "data" / "asb_patched"
 
+# Repository-owned repairs, kept separate from files copied from ASB itself.
+LOCAL_PATCHES: dict[str, dict[str, Path]] = {
+    "awareness_prism": {
+        "run_experiments.py": (
+            Path(__file__).parent / "overlays/awareness_prism/run_experiments.py.txt"
+        ),
+    },
+}
+LOCAL_PATCH_SOURCE_HASHES: dict[str, dict[str, str]] = {
+    "awareness_prism": {
+        "run_experiments.py": (
+            "353f032f7b94b6beba8923cde2b9bf10b5a726ca4fd55f7e5e887d5506c1f895"
+        ),
+    },
+}
+
 
 def _workspace(sample_id: str, workspace: str) -> Path:
     """The codebase directory for a sample: ASB's own, or a patched copy of it."""
     original = ASB_ROOT / workspace
-    patches = PATCHES.get(sample_id)
+    patches = {
+        path: ASB_ROOT / source for path, source in PATCHES.get(sample_id, {}).items()
+    }
+    patches.update(LOCAL_PATCHES.get(sample_id, {}))
     if not patches:
         return original
+    # A complete replacement must not silently mask a changed upstream script.
+    for path, expected in LOCAL_PATCH_SOURCE_HASHES.get(sample_id, {}).items():
+        actual = hashlib.sha256((original / path).read_bytes()).hexdigest()
+        if actual != expected:
+            raise ValueError(
+                f"{sample_id} overlay source changed: {path} "
+                f"(expected {expected}, got {actual}); review the repair first."
+            )
     # Rebuild the copy whenever the patch or its source files change.
     stamp = hashlib.sha256(
         b"".join(
-            path.encode() + (ASB_ROOT / source).read_bytes()
+            path.encode() + source.read_bytes()
             for path, source in sorted(patches.items())
         )
     ).hexdigest()
@@ -98,7 +124,7 @@ def _workspace(sample_id: str, workspace: str) -> Path:
     build = Path(tempfile.mkdtemp(dir=PATCHED_ROOT, prefix=f".{sample_id}-"))
     shutil.copytree(original, build, dirs_exist_ok=True, symlinks=True)
     for path, source in patches.items():
-        shutil.copyfile(ASB_ROOT / source, build / path)
+        shutil.copyfile(source, build / path)
     (build / PATCH_MARKER).write_text(stamp)
     if target.exists():
         shutil.rmtree(target)
