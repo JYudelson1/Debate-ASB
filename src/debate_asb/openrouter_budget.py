@@ -744,3 +744,45 @@ class GuardedTransport(httpx2.AsyncBaseTransport):
             prompt_tokens=prompt,
             completion_tokens=completion,
         )
+
+
+class _GuardedOpenRouterAPI(OpenRouterAPI):
+    """Keep Inspect reinitialization from replacing a closed guarded client."""
+
+    def __init__(
+        self, transport: GuardedTransport, *, api_key: str, config: GenerateConfig
+    ):
+        self._guard = transport
+        super().__init__(
+            model_name=transport.terms.model,
+            base_url=BASE_URL,
+            api_key=api_key,
+            config=config,
+            provider=transport.terms.provider_pin(),
+            stream=False,
+            strict_tools=False,
+            max_retries=0,
+        )
+
+    def _create_http_client(self) -> httpx2.AsyncClient:
+        return httpx2.AsyncClient(
+            transport=self._guard, follow_redirects=False, trust_env=False
+        )
+
+    def completion_params(self, config: GenerateConfig, tools: bool) -> dict:
+        params = super().completion_params(config, tools)
+        params.setdefault("extra_body", {})["usage"] = {"include": True}
+        return params
+
+
+def guarded_model(
+    transport: GuardedTransport, *, api_key: str, config: GenerateConfig
+) -> Model:
+    """Build one guarded Inspect model after authenticated preflight succeeds."""
+    api = _GuardedOpenRouterAPI(transport, api_key=api_key, config=config)
+    # Use the standard provider identity without registering an unguarded
+    # reconstruction route or including credentials in registry parameters.
+    registry_tag(lambda: None, api, RegistryInfo(type="modelapi", name="openrouter"))
+    model = Model(api, config)
+    api.qualified_model_name = str(model)
+    return model
