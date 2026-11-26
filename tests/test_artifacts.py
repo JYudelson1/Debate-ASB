@@ -47,8 +47,19 @@ def test_claude_md_hidden_and_paths_confined(hop_jump):
     assert "CLAUDE.md" not in hop_jump.list_files()
     assert "CLAUDE.md" not in hop_jump.list_files(recursive=True)
     for bad in ["CLAUDE.md", "../../../README.md", "nope.py"]:
-        with pytest.raises((FileNotFoundError, ValueError)):
+        with pytest.raises((FileNotFoundError, ToolError)):
             hop_jump.read_file(bad)
+
+
+@pytest.mark.parametrize("code_execution", [False, True])
+def test_path_outside_codebase_is_a_tool_error(tmp_path, code_execution):
+    # A plain exception here ended the whole debate run (BL, 26 Nov).
+    (tmp_path / "a.py").write_text("x = 1\n")
+    codebase = Codebase(tmp_path, code_execution=code_execution)
+    for read in (codebase.read_file, codebase.list_files):
+        with pytest.raises(ToolError, match="outside the codebase") as error:
+            read("/opt/venv/lib/python3.12/site-packages/nnsight")
+        assert ("run_bash" in str(error.value)) == code_execution
 
 
 def test_invalid_search_pattern_is_returned(tmp_path):
