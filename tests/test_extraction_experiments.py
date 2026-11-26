@@ -4,6 +4,7 @@ import pytest
 from conftest import say
 from inspect_ai import eval
 from inspect_ai.log import resolve_sample_attachments
+from inspect_ai.tool import ToolError
 
 from debate_asb.artifacts.codebase import Codebase
 from debate_asb.protocols.extraction_experiments import (
@@ -35,7 +36,7 @@ def test_trace_hides_answer_context_and_blocks_escape(tmp_path):
     (tmp_path / "f.py").write_text("def f():\n    return 0\n")
     artifact = Codebase(tmp_path)
     assert "private context" not in trace_source(artifact, "f.py", "f")
-    with pytest.raises(ValueError):
+    with pytest.raises(ToolError):
         trace_source(artifact, "../outside.py", "f")
     with pytest.raises(FileNotFoundError):
         trace_source(artifact, "CLAUDE.md", "f")
