@@ -307,7 +307,8 @@ class Codebase(Artifact):
         """Resolve a participant-supplied path, refusing anything outside the codebase."""
         resolved = (self.root / path).resolve()
         if not resolved.is_relative_to(self.root):
-            raise ValueError(f"{path} is outside the codebase")
+            hint = " Use run_bash to look at it." if self.code_execution else ""
+            raise ToolError(f"{path} is outside the codebase.{hint}")
         if HIDDEN_NAMES & set(resolved.relative_to(self.root).parts):
             raise FileNotFoundError(path)
         if not resolved.exists():

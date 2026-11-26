@@ -1,7 +1,14 @@
 services:
   default:
-    build: .
-    image: debate-asb-sandbox
+    build:
+      context: .
+      # The ASB codebases, read only while building their Python environments.
+      additional_contexts:
+        asb: ../data/asb/codebases
+    # The tag is a hash of the files that build the image (tests check it), so
+    # changing them gives a new tag, and Inspect builds the new image on any
+    # machine that only has an older one.
+    image: debate-asb-sandbox:26d8dd13
     command: tail -f /dev/null
     init: true
     network_mode: none  # untrusted code: no network

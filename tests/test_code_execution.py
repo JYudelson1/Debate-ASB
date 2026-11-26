@@ -13,7 +13,7 @@ from test_protocols import model_calls, run
 from debate_asb import task as task_module
 from debate_asb.artifacts import Codebase
 from debate_asb.artifacts import codebase as codebase_module
-from debate_asb.datasets import asb_samples
+from debate_asb.datasets import ASB_ROOT, asb_samples
 from debate_asb.models import Side
 from debate_asb.prompts import SETTINGS
 from debate_asb.protocols.lone_judge import lone_judge
@@ -98,6 +98,8 @@ def test_task_with_code_execution(script, fake_sandbox, tmp_path):
         setup["user"] == "root" and "chmod -R a+rX,a-w /workspace" in setup["cmd"][-1]
     )
     assert "CLAUDE.md" in setup["cmd"][-1]
+    # The sample's own Python environment goes first on PATH, if the image has one.
+    assert "ln -sfn /opt/envs/by-id/hop_jump /opt/venv" in setup["cmd"][-1]
     assert command["cmd"] == ["bash", "-c", "python -c 'print(1)'"]
     system = model_calls(sample, "judge")[0].input[0].text
     assert "DO NOT RUN EXPERIMENTS" in system and "`run_bash`" in system
@@ -133,8 +135,8 @@ def test_real_sandbox(script, tmp_path, monkeypatch):
         "touch /workspace/x",
         "echo scratch > ~/notes && cat ~/notes",
         "python -c \"import urllib.request; urllib.request.urlopen('http://1.1.1.1', timeout=5)\"",
-        "python -c 'import numpy, pandas; print(numpy.__version__)'",
-        "python -c 'import torch, transformers; print(torch.cuda.is_available())'",
+        "python -c 'import numpy; print(numpy.__version__)'",
+        "python -c 'import torch; print(torch.__version__, torch.cuda.is_available())'",
         "sleep 10; echo finished",
     ]
     script(
@@ -154,5 +156,30 @@ def test_real_sandbox(script, tmp_path, monkeypatch):
     assert "scratch" in scratch
     assert "[exit code 0]" not in network  # no network
     assert "[exit code 0]" in numpy
-    assert "[exit code 0]" in torch and "False" in torch  # CPU-only torch
+    # lazy_alpha's own environment: its locked torch, CPU-only.
+    assert "[exit code 0]" in torch and "2.10.0+cpu False" in torch
     assert "killed after 5 seconds" in sleep and "finished" not in sleep
+
+
+def test_every_core_codebase_has_a_lock_for_its_sandbox_environment():
+    """docker/build_envs.sh builds environments from <paper>/<variant>/uv.lock."""
+    if not ASB_ROOT.exists():
+        pytest.skip("ASB data not fetched")
+    for sample in asb_samples():
+        original = ASB_ROOT / "codebases" / Path(*str(sample.id).split("_", 1))
+        assert (original / "uv.lock").exists() and (
+            original / "pyproject.toml"
+        ).exists(), sample.id
+
+
+def test_sandbox_image_tag_matches_its_build_files():
+    """Change docker/ and the tag must change too, or machines keep the old image."""
+    import hashlib
+
+    docker = Path(__file__).resolve().parents[1] / "docker"
+    files = ["Dockerfile", "build_envs.sh", "add_imports.py"]
+    digest = hashlib.sha256(b"".join((docker / f).read_bytes() for f in files))
+    expected = f"image: debate-asb-sandbox:{digest.hexdigest()[:8]}"
+    assert expected in (docker / "compose.yaml").read_text(), (
+        f"Update docker/compose.yaml to '{expected}'"
+    )

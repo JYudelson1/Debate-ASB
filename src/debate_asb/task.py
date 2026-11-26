@@ -5,6 +5,7 @@ function that calls it, which is what `inspect eval` runs.
 """
 
 import math
+import shlex
 from pathlib import Path
 
 import anyio
@@ -21,6 +22,8 @@ from debate_asb.models import check_openrouter_account
 from debate_asb.protocol import AuditSample, Protocol, ToolSet
 
 SANDBOX_COMPOSE = Path(__file__).resolve().parents[2] / "docker" / "compose.yaml"
+# Per-codebase Python environments in the sandbox image, by sample id (docker/build_envs.sh).
+SAMPLE_ENVS = "/opt/envs/by-id"
 
 
 def protocol_task(
@@ -65,7 +68,7 @@ def protocol_solver(protocol: Protocol):
             load_artifacts, state.metadata["artifacts"]
         )
         if state.metadata["artifacts"].get("codebase", {}).get("code_execution"):
-            await _prepare_workspace()
+            await _prepare_workspace(str(state.sample_id))
         sample = AuditSample(
             id=str(state.sample_id),
             epoch=state.epoch,
@@ -221,8 +224,9 @@ def _with_code_execution(sample: Sample) -> Sample:
     })  # fmt: skip
 
 
-async def _prepare_workspace() -> None:
-    """Hide what the read-only tools hide, and make the codebase read-only for participants."""
+async def _prepare_workspace(sample_id: str) -> None:
+    """Hide what the read-only tools hide, make the codebase read-only for participants,
+    and put the sample's own Python environment first on PATH (docker/build_envs.sh)."""
     hidden = " ".join(
         f"-name {name!r} -o" for name in sorted(HIDDEN_NAMES)
     ).removesuffix(" -o")
@@ -230,12 +234,19 @@ async def _prepare_workspace() -> None:
         [
             "sh",
             "-c",
-            f"find {WORKSPACE} \\( {hidden} \\) -prune -exec rm -rf {{}} + ; chmod -R a+rX,a-w {WORKSPACE}",
+            f"find {WORKSPACE} \\( {hidden} \\) -prune -exec rm -rf {{}} + ; chmod -R a+rX,a-w {WORKSPACE}"
+            + _use_sample_env(sample_id),
         ],
         user="root",
     )
     if not result.success:
         raise RuntimeError(f"Couldn't prepare {WORKSPACE}: {result.stderr}")
+
+
+def _use_sample_env(sample_id: str) -> str:
+    """Shell that links /opt/venv to the sample's environment, if the image built one."""
+    env = shlex.quote(f"{SAMPLE_ENVS}/{sample_id}")
+    return f" ; if [ -e {env} ]; then ln -sfn {env} /opt/venv; fi"
 
 
 def _attach_replayed_stages(
