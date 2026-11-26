@@ -562,3 +562,185 @@ class SpendLedger:
             serving=serving,
             outcomes=outcomes,
         )
+
+
+class GuardedTransport(httpx2.AsyncBaseTransport):
+    """Reserve every HTTP attempt, including SDK retries and force-answer calls."""
+
+    def __init__(
+        self,
+        ledger: SpendLedger,
+        terms: EndpointTerms,
+        *,
+        batch: str,
+        finalist: bool = False,
+        inner: httpx2.AsyncBaseTransport | None = None,
+    ):
+        self.ledger = ledger
+        self.terms = terms
+        self.batch = batch
+        self.finalist = finalist
+        self.inner = inner or httpx2.AsyncHTTPTransport(retries=0, trust_env=False)
+
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        output_tokens = await self._check_request(request)
+        attempt = self.ledger.reserve(
+            self.terms.reserve_nano(output_tokens),
+            batch=self.batch,
+            finalist=self.finalist,
+        )
+        try:
+            response = await self.inner.handle_async_request(request)
+            await response.aread()
+        except BaseException:
+            # Timeout/cancellation/crash may happen after the provider accepted
+            # the request. A missing response cannot release the reservation.
+            self.ledger.record(attempt, "transport-unresolved")
+            raise
+        self._record_response(attempt, response)
+        return response
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()
+
+    async def _check_request(self, request: httpx2.Request) -> int:
+        if request.method != "POST" or str(request.url) != CHAT_URL:
+            raise BudgetBlocked("Unexpected inference endpoint")
+        if any(name.startswith("x-openrouter-") for name in request.headers):
+            raise BudgetBlocked("OpenRouter request overrides are unsupported")
+        try:
+            body = json.loads(await request.aread())
+            if not isinstance(body, dict):
+                raise ValueError
+            if set(body) - REQUEST_FIELDS or body["model"] != self.terms.model:
+                raise ValueError
+            if body["provider"] != self.terms.provider_pin():
+                raise ValueError
+            if (
+                body.get("stream", False) is not False
+                or type(body.get("n", 1)) is not int
+                or body.get("n", 1) != 1
+            ):
+                raise ValueError
+            if (
+                body["usage"] != {"include": True}
+                or body["usage"]["include"] is not True
+            ):
+                raise ValueError
+            tokens = [
+                body[name]
+                for name in ("max_tokens", "max_completion_tokens")
+                if name in body
+            ]
+            if len(tokens) != 1 or type(tokens[0]) is not int:
+                raise ValueError
+            if not 0 < tokens[0] <= self.terms.max_completion_tokens:
+                raise ValueError
+            reasoning = body.get("reasoning", {})
+            if set(reasoning) - {"enabled", "effort", "exclude", "max_tokens"}:
+                raise ValueError
+            if "max_tokens" in reasoning and not (
+                type(reasoning["max_tokens"]) is int
+                and 0 < reasoning["max_tokens"] <= tokens[0]
+            ):
+                raise ValueError
+            if not isinstance(body["messages"], list) or not body["messages"]:
+                raise ValueError
+            for message in body["messages"]:
+                content = message.get("content")
+                if "audio" in message or "attachments" in message:
+                    raise ValueError
+                if content is None or isinstance(content, str):
+                    continue
+                if not isinstance(content, list) or any(
+                    set(part) != {"type", "text"}
+                    or part["type"] != "text"
+                    or not isinstance(part["text"], str)
+                    for part in content
+                ):
+                    raise ValueError
+            if any(tool.get("type") != "function" for tool in body.get("tools", [])):
+                raise ValueError
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
+            raise BudgetBlocked(
+                "Unbounded or unsupported OpenRouter request"
+            ) from error
+        return tokens[0]
+
+    def _record_response(self, attempt: int, response: httpx2.Response) -> None:
+        try:
+            body = json.loads(response.content, parse_float=Decimal)
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            body = {}
+        generation = body.get("id")
+        # Generation IDs are reconciliation keys. Never log the request, auth
+        # headers, error body, or provider response contents.
+        if not isinstance(generation, str) or not re.fullmatch(
+            r"gen-[A-Za-z0-9-]{1,120}", generation
+        ):
+            generation = None
+        usage = body.get("usage")
+        if not isinstance(usage, dict) or usage.get("cost") is None:
+            self.ledger.record(attempt, "billing-unresolved", generation_id=generation)
+            if response.is_success:
+                raise BudgetBlocked("Successful response is missing billable usage")
+            return
+        try:
+            billed = _usd_to_nano(usage["cost"])
+        except BudgetBlocked:
+            self.ledger.record(
+                attempt, "invalid-billing", generation_id=generation, freeze=True
+            )
+            raise
+        if (
+            body.get("provider") != SERVING_PROVIDER
+            or usage.get("is_byok") is not False
+        ):
+            self.ledger.record(
+                attempt,
+                "provider-or-billing-unverified",
+                generation_id=generation,
+                freeze=True,
+            )
+        provider = body["provider"]
+        model = body.get("model")
+        if not isinstance(model, str) or not re.fullmatch(
+            r"[A-Za-z0-9_.:/-]{1,120}", model
+        ):
+            model = None
+        prompt, completion = usage.get("prompt_tokens"), usage.get("completion_tokens")
+        if type(prompt) is not int or prompt < 0:
+            prompt = None
+        if type(completion) is not int or completion < 0:
+            completion = None
+        nominal = (
+            self.terms.nominal_nano(prompt, completion)
+            if prompt is not None and completion is not None
+            else None
+        )
+        if model is None or model not in {self.terms.model, self.terms.served_version}:
+            self.ledger.record(
+                attempt,
+                "unexpected-model",
+                billed=billed,
+                generation_id=generation,
+                nominal=nominal,
+                served_model=model,
+                served_provider=provider,
+                prompt_tokens=prompt,
+                completion_tokens=completion,
+                freeze=True,
+            )
+        self.ledger.record(
+            attempt,
+            "billed",
+            billed=billed,
+            generation_id=generation,
+            nominal=nominal,
+            served_model=model,
+            served_provider=provider,
+            prompt_tokens=prompt,
+            completion_tokens=completion,
+        )
