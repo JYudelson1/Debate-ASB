@@ -292,3 +292,273 @@ def verified_preflight(
     terms = EndpointTerms.from_endpoint(endpoint, model=model)
     terms.reserve_nano(max_output_tokens)
     return OpenRouterPreflight(terms, endpoint, available, credit_source, key_remaining)
+
+
+class SpendLedger:
+    """SQLite reservations held across processes and surviving a crash/retry."""
+
+    def __init__(
+        self, path: Path, *, cap_usd: Decimal, smoke_reserve_usd: Decimal = Decimal(0)
+    ):
+        self.path = path.resolve()
+        self.cap = _usd_to_nano(cap_usd, ceiling=False)
+        self.smoke_reserve = _usd_to_nano(smoke_reserve_usd)
+        if not 0 < self.cap <= 100 * NANO_USD or self.smoke_reserve >= self.cap:
+            raise BudgetBlocked("Require a positive cap and a smaller finalist reserve")
+        with self._write() as database:
+            database.execute("""CREATE TABLE IF NOT EXISTS settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                cap_nano INTEGER NOT NULL, smoke_reserve_nano INTEGER NOT NULL,
+                frozen INTEGER NOT NULL DEFAULT 0
+            )""")
+            database.execute("""CREATE TABLE IF NOT EXISTS attempts (
+                id INTEGER PRIMARY KEY, batch TEXT NOT NULL,
+                reservation_nano INTEGER NOT NULL, billed_nano INTEGER,
+                generation_id TEXT, outcome TEXT NOT NULL DEFAULT 'reserved',
+                nominal_nano INTEGER, served_model TEXT, served_provider TEXT,
+                prompt_tokens INTEGER, completion_tokens INTEGER,
+                reserved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                recorded_at TEXT
+            )""")
+            database.execute(
+                "INSERT OR IGNORE INTO settings VALUES (1, ?, ?, 0)",
+                (self.cap, self.smoke_reserve),
+            )
+            saved = database.execute(
+                "SELECT cap_nano, smoke_reserve_nano FROM settings WHERE id = 1"
+            ).fetchone()
+            if saved != (self.cap, self.smoke_reserve):
+                raise BudgetBlocked(
+                    "All processes must use the ledger's original cap and reserve"
+                )
+
+    def enable_quartile_stops(self) -> None:
+        """Install the first cumulative $25 stage on the existing $100 ledger."""
+        if self.cap != 100 * NANO_USD:
+            raise BudgetBlocked("Quartile stops require a $100 ledger")
+        with self._write() as database:
+            database.execute("""CREATE TABLE IF NOT EXISTS budget_stages (
+                limit_nano INTEGER PRIMARY KEY CHECK (limit_nano IN
+                    (25000000000, 50000000000, 75000000000, 100000000000)),
+                opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                closed_at TEXT, checkpoint TEXT, billed_nano INTEGER,
+                unresolved_reserve_nano INTEGER
+            )""")
+            database.execute("""CREATE TRIGGER IF NOT EXISTS enforce_budget_stage
+                BEFORE INSERT ON attempts
+                WHEN NEW.reservation_nano + (
+                    SELECT COALESCE(SUM(COALESCE(billed_nano, reservation_nano)), 0)
+                    FROM attempts
+                ) > (SELECT MAX(limit_nano) FROM budget_stages)
+                BEGIN
+                    SELECT RAISE(ABORT, 'Attempt would exceed the active budget stage');
+                END""")
+            database.execute(
+                "INSERT OR IGNORE INTO budget_stages (limit_nano) VALUES (?)",
+                (QUARTILE_USD * NANO_USD,),
+            )
+            billed, unresolved = self._charged_and_reserved(database)
+            if billed + unresolved > self._stage_limit(database):
+                raise BudgetBlocked(
+                    "Existing commitments exceed the active budget stage"
+                )
+
+    @staticmethod
+    def _charged_and_reserved(database: sqlite3.Connection) -> tuple[int, int]:
+        billed, unresolved = database.execute(
+            """SELECT COALESCE(SUM(billed_nano), 0),
+                COALESCE(SUM(CASE WHEN billed_nano IS NULL THEN reservation_nano END), 0)
+                FROM attempts"""
+        ).fetchone()
+        return billed, unresolved
+
+    def _stage_limit(self, database: sqlite3.Connection) -> int:
+        if (
+            database.execute(
+                "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'budget_stages'"
+            ).fetchone()
+            is None
+        ):
+            return self.cap
+        (active,) = database.execute(
+            "SELECT MAX(limit_nano) FROM budget_stages"
+        ).fetchone()
+        if active is None:
+            raise BudgetBlocked("Budget stages have no active ceiling")
+        return active
+
+    def advance_quartile(self, *, completed_limit_usd: int, checkpoint: str) -> None:
+        """Record a checkpoint and open the next quartile exactly once."""
+        if completed_limit_usd not in (25, 50, 75) or not checkpoint.strip():
+            raise BudgetBlocked(
+                "Require the completed $25, $50 or $75 stage and a checkpoint"
+            )
+        previous = completed_limit_usd * NANO_USD
+        following = previous + QUARTILE_USD * NANO_USD
+        with self._write() as database:
+            (frozen,) = database.execute(
+                "SELECT frozen FROM settings WHERE id = 1"
+            ).fetchone()
+            if (
+                frozen
+                or self._stage_limit(database) != previous
+                or following > self.cap
+            ):
+                raise BudgetBlocked(
+                    "The expected stage is inactive or the ledger is frozen"
+                )
+            billed, unresolved = self._charged_and_reserved(database)
+            database.execute(
+                """UPDATE budget_stages
+                SET closed_at = CURRENT_TIMESTAMP, checkpoint = ?, billed_nano = ?,
+                    unresolved_reserve_nano = ? WHERE limit_nano = ?""",
+                (checkpoint.strip(), billed, unresolved, previous),
+            )
+            database.execute(
+                "INSERT INTO budget_stages (limit_nano) VALUES (?)", (following,)
+            )
+
+    @contextmanager
+    def _write(self) -> Iterator[sqlite3.Connection]:
+        database = sqlite3.connect(self.path, timeout=10)
+        try:
+            database.execute("BEGIN IMMEDIATE")
+            with database:
+                yield database
+        finally:
+            database.close()
+
+    def reserve(self, amount: int, *, batch: str, finalist: bool) -> int:
+        with self._write() as database:
+            (frozen,) = database.execute(
+                "SELECT frozen FROM settings WHERE id = 1"
+            ).fetchone()
+            if frozen:
+                raise BudgetBlocked(
+                    "Ledger frozen after an unbounded or misrouted response"
+                )
+            billed, unresolved = self._charged_and_reserved(database)
+            ceiling = min(
+                self._stage_limit(database),
+                self.cap if finalist else self.cap - self.smoke_reserve,
+            )
+            if amount <= 0 or billed + unresolved + amount > ceiling:
+                raise BudgetBlocked("Attempt would exceed the available budget")
+            attempt = database.execute(
+                "INSERT INTO attempts (batch, reservation_nano) VALUES (?, ?)",
+                (batch, amount),
+            ).lastrowid
+            if attempt is None:
+                raise BudgetBlocked("Reservation ID unavailable")
+            return attempt
+
+    def record(
+        self,
+        attempt: int,
+        outcome: str,
+        *,
+        billed: int | None = None,
+        generation_id: str | None = None,
+        nominal: int | None = None,
+        served_model: str | None = None,
+        served_provider: str | None = None,
+        prompt_tokens: int | None = None,
+        completion_tokens: int | None = None,
+        freeze: bool = False,
+    ) -> None:
+        with self._write() as database:
+            (reserved,) = database.execute(
+                "SELECT reservation_nano FROM attempts WHERE id = ? AND outcome = 'reserved'",
+                (attempt,),
+            ).fetchone()
+            if billed is not None and billed > reserved:
+                freeze = True
+                outcome = "exceeded-reservation"
+            if freeze:
+                database.execute("UPDATE settings SET frozen = 1 WHERE id = 1")
+            database.execute(
+                """UPDATE attempts
+                SET billed_nano = ?, generation_id = ?, outcome = ?, nominal_nano = ?,
+                served_model = ?, served_provider = ?, prompt_tokens = ?,
+                completion_tokens = ?, recorded_at = CURRENT_TIMESTAMP
+                WHERE id = ?""",
+                (
+                    billed,
+                    generation_id,
+                    outcome,
+                    nominal,
+                    served_model,
+                    served_provider,
+                    prompt_tokens,
+                    completion_tokens,
+                    attempt,
+                ),
+            )
+        if freeze:
+            raise BudgetBlocked(f"Ledger frozen after response outcome {outcome}")
+
+    def summary(self) -> dict:
+        """Return totals without any request text, credentials or response bodies."""
+        with self._write() as database:
+            billed, unresolved, nominal, count = database.execute(
+                """SELECT COALESCE(SUM(billed_nano), 0),
+                COALESCE(SUM(CASE WHEN billed_nano IS NULL THEN reservation_nano END), 0),
+                COALESCE(SUM(nominal_nano), 0), COUNT(*) FROM attempts"""
+            ).fetchone()
+            (frozen,) = database.execute(
+                "SELECT frozen FROM settings WHERE id = 1"
+            ).fetchone()
+            serving = [
+                dict(model=model, provider=provider, calls=calls)
+                for model, provider, calls in database.execute(
+                    """SELECT served_model, served_provider, COUNT(*) FROM attempts
+                    WHERE served_model IS NOT NULL AND served_provider IS NOT NULL
+                    GROUP BY served_model, served_provider"""
+                )
+            ]
+            outcomes = dict(
+                database.execute(
+                    "SELECT outcome, COUNT(*) FROM attempts GROUP BY outcome"
+                )
+            )
+            stage = self._stage_limit(database)
+            stages = []
+            if database.execute(
+                "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'budget_stages'"
+            ).fetchone():
+                stages = [
+                    dict(
+                        limit_usd=limit / NANO_USD,
+                        opened_at=opened_at,
+                        closed_at=closed_at,
+                        checkpoint=checkpoint,
+                        billed_usd=None
+                        if stage_billed is None
+                        else stage_billed / NANO_USD,
+                        unresolved_reserve_usd=None
+                        if stage_unresolved is None
+                        else stage_unresolved / NANO_USD,
+                    )
+                    for limit, opened_at, closed_at, checkpoint, stage_billed, stage_unresolved in database.execute(
+                        """SELECT limit_nano, opened_at, closed_at, checkpoint, billed_nano,
+                            unresolved_reserve_nano FROM budget_stages ORDER BY limit_nano"""
+                    )
+                ]
+        return dict(
+            limit_usd=self.cap / NANO_USD,
+            stage_limit_usd=stage / NANO_USD,
+            global_available_usd=(self.cap - billed - unresolved) / NANO_USD,
+            quarter_checkpoints=stages,
+            billed_usd=billed / NANO_USD,
+            unresolved_reserve_usd=unresolved / NANO_USD,
+            nominal_usd=nominal / NANO_USD,
+            available_usd=(stage - billed - unresolved) / NANO_USD,
+            smoke_available_usd=(
+                min(stage, self.cap - self.smoke_reserve) - billed - unresolved
+            )
+            / NANO_USD,
+            frozen=bool(frozen),
+            attempts=count,
+            serving=serving,
+            outcomes=outcomes,
+        )
