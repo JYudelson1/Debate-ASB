@@ -81,3 +81,41 @@ def test_every_paper_fits_in_one_read():
         out = codebase.read_file("PAPER.md")
         total = len(paper.read_text(errors="replace").splitlines())
         assert out.endswith(f"showed lines 1-{total} of {total}]"), paper
+
+
+def test_read_file_shows_long_lines_in_full(tmp_path):
+    # e.g. a results file saved as one 19k-character JSON line
+    line = '{"results": [' + ", ".join(str(i) for i in range(4000)) + "]}"
+    (tmp_path / "results.json").write_text(line + "\n")
+    out = Codebase(tmp_path).read_file("results.json")
+    assert fits(out) and line in out and "truncated" not in out
+
+
+def test_read_file_cuts_only_a_line_that_alone_overflows(tmp_path):
+    (tmp_path / "huge.json").write_text("short\n" + "y" * 200_000 + "\nafter\n")
+    out = Codebase(tmp_path).read_file("huge.json")
+    assert fits(out)
+    assert "[... line truncated, 200,000 chars]" in out
+    assert shown(out) == [1, 2, 3] and out.endswith("showed lines 1-3 of 3]")
+
+
+def test_search_shows_the_match_in_a_long_line(tmp_path):
+    (tmp_path / "evaluation_results.json").write_text(
+        "x" * 10_000 + '"lion": 0.42' + "x" * 10_000
+    )
+    out = Codebase(tmp_path).search('"lion"')
+    assert '"lion": 0.42' in out and len(out) < 400
+
+
+def test_search_lists_files_too_large_to_search(tmp_path, monkeypatch):
+    monkeypatch.setattr(codebase_module, "MAX_SEARCH_FILE_BYTES", 100)
+    (tmp_path / "big.csv").write_text("needle," * 100)
+    (tmp_path / "small.py").write_text("x = 1\n")
+    (tmp_path / "log.eval").write_bytes(
+        b"\0" * 200
+    )  # binary: never searched, not listed
+    out = Codebase(tmp_path).search("needle")
+    assert "log.eval" not in out
+    assert out.startswith("No matches.") and "Not searched" in out and "big.csv" in out
+    assert "run_bash" not in out  # this codebase has no code execution
+    assert "run_bash" in Codebase(tmp_path, code_execution=True).search("needle")

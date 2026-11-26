@@ -38,7 +38,12 @@ TOOL_OUTPUT_BYTES = 64 * 1024
 TOOL_OUTPUT_BUDGET = TOOL_OUTPUT_BYTES - 1024  # room for the footer
 MAX_LIST_ENTRIES = 1200
 MAX_READ_LINES = 1200
-MAX_LINE_CHARS = 2000
+# A line is shown in full unless it alone would overflow a call's output; such a
+# line (e.g. a whole JSON results file on one line) is cut to this many bytes.
+MAX_LINE_BYTES = TOOL_OUTPUT_BUDGET - 1024
+SEARCH_LINE_CHARS = (
+    300  # each search match shows this much of its line, around the match
+)
 MAX_SEARCH_MATCHES = 400
 MAX_SEARCH_FILE_BYTES = 10_000_000
 SEARCH_TIMEOUT_SECONDS = 10.0
@@ -103,10 +108,10 @@ class Codebase(Artifact):
     def read_file(self, path: str, start_line: int = 1, num_lines: int = 1200) -> str:
         """Read lines from a text file in the codebase. Output lines are numbered.
 
-        Shows at most 1200 lines and about 63 KB per call (lines over 2000
-        characters are cut). It stops early at a whole line if the output would
-        be longer; the last line of the output says which lines were shown and
-        where to continue.
+        Shows at most 1200 lines and about 63 KB per call. It stops early at a
+        whole line if the output would be longer; the last line of the output
+        says which lines were shown and where to continue. Lines are shown in
+        full, except a single line over about 62 KB, which is cut.
 
         Args:
             path: File path relative to the codebase root.
@@ -126,12 +131,7 @@ class Codebase(Artifact):
         out = []
         for n in range(start, end):
             line = all_lines[n - 1]
-            if len(line) > MAX_LINE_CHARS:
-                line = (
-                    line[:MAX_LINE_CHARS]
-                    + f" [... line truncated, {len(line):,} chars]"
-                )
-            out.append(f"{n:>6}  {line}")
+            out.append(f"{n:>6}  {_cut_line(line)}")
         out = _fit(out)
         last = start + len(out) - 1
         footer = f"[{path}: showed lines {start}-{last} of {len(all_lines)}"
@@ -150,8 +150,9 @@ class Codebase(Artifact):
             directory: Directory to search, relative to the codebase root.
             ignore_case: Case-insensitive matching.
 
-        Shows at most 400 matches and about 63 KB per call (each matching line
-        cut to 300 characters), and says when it stopped early.
+        Shows at most 400 matches and about 63 KB per call, with up to 300
+        characters of each matching line around the match, and says when it
+        stopped early. Files over 10 MB are not searched; the output lists them.
         """
         try:
             # Preserve the advertised Python-re syntax/error contract; VERSION0
@@ -167,6 +168,12 @@ class Codebase(Artifact):
         # A file target is searched directly; rglob would otherwise find no children.
         target = self._resolve(directory)
         files = [target] if target.is_file() else self._files(target)
+        too_large = [
+            f
+            for f in files
+            if f.stat().st_size > MAX_SEARCH_FILE_BYTES and not _is_binary(f)
+        ]
+        note = self._not_searched_note(too_large)
         for file in files:
             if file.stat().st_size > MAX_SEARCH_FILE_BYTES or _is_binary(file):
                 continue
@@ -181,10 +188,12 @@ class Codebase(Artifact):
                         f"Search timed out after {SEARCH_TIMEOUT_SECONDS:g} seconds. "
                         "Results are incomplete; narrow the pattern or directory.\n"
                         + "\n".join(matches)
+                        + note
                     )
                 if found:
                     matches.append(
-                        f"{file.relative_to(self.root).as_posix()}:{n}: {line[:300]}"
+                        f"{file.relative_to(self.root).as_posix()}:{n}: "
+                        + _around(line, found.start())
                     )
                     if len(_fit(matches)) < len(matches):
                         matches.pop()
@@ -192,13 +201,28 @@ class Codebase(Artifact):
                             f"... stopped after {len(matches)} matches (output limit). "
                             "Narrow the search."
                         )
-                        return "\n".join(matches)
+                        return "\n".join(matches) + note
                     if len(matches) >= MAX_SEARCH_MATCHES:
                         matches.append(
                             f"... stopped at {MAX_SEARCH_MATCHES} matches. Narrow the search."
                         )
-                        return "\n".join(matches)
-        return "\n".join(matches) or "No matches."
+                        return "\n".join(matches) + note
+        return ("\n".join(matches) or "No matches.") + note
+
+    def _not_searched_note(self, files: list[Path]) -> str:
+        """Which files a search skipped for size, so 'No matches' isn't read as 'not there'."""
+        if not files:
+            return ""
+        shown = ", ".join(
+            f"{f.relative_to(self.root).as_posix()} ({f.stat().st_size / 1e6:.0f} MB)"
+            for f in files[:20]
+        )
+        more = f" and {len(files) - 20} more" if len(files) > 20 else ""
+        how = " Use run_bash (e.g. grep) to search them." if self.code_execution else ""
+        return (
+            f"\n[Not searched, over {MAX_SEARCH_FILE_BYTES // 1_000_000} MB: "
+            f"{shown}{more}.{how}]"
+        )
 
     # --- plain only (not tools) ---
 
@@ -325,6 +349,27 @@ def _head_and_tail(text: str, budget: int = TOOL_OUTPUT_BUDGET) -> str:
     head = data[:half].decode("utf-8", errors="ignore")
     tail = data[-half:].decode("utf-8", errors="ignore")
     return f"{head}\n[... {len(data) - 2 * half:,} bytes of output omitted ...]\n{tail}"
+
+
+def _cut_line(line: str) -> str:
+    """The line, or its start with a marker if it alone would overflow a tool call."""
+    data = line.encode("utf-8")
+    if len(data) <= MAX_LINE_BYTES:
+        return line
+    start = data[:MAX_LINE_BYTES].decode("utf-8", errors="ignore")
+    # Same marker as before (extraction_analysis parses it).
+    return f"{start} [... line truncated, {len(line):,} chars]"
+
+
+def _around(line: str, at: int) -> str:
+    """Up to SEARCH_LINE_CHARS of the line, starting a little before position `at`."""
+    if len(line) <= SEARCH_LINE_CHARS:
+        return line
+    start = max(0, min(at - 100, len(line) - SEARCH_LINE_CHARS))
+    end = start + SEARCH_LINE_CHARS
+    return (
+        ("..." if start else "") + line[start:end] + ("..." if end < len(line) else "")
+    )
 
 
 def _is_binary(path: Path) -> bool:
