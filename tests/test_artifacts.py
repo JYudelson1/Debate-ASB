@@ -51,6 +51,18 @@ def test_claude_md_hidden_and_paths_confined(hop_jump):
             hop_jump.read_file(bad)
 
 
+def test_patch_marker_hidden(tmp_path):
+    """A patched copy's marker must not tell participants the codebase was modified."""
+    (tmp_path / ".asb_patch").write_text("stamp\n")
+    (tmp_path / "a.py").write_text("x = 1\n")
+    codebase = Codebase(tmp_path)
+    assert ".asb_patch" not in codebase.list_files()
+    assert ".asb_patch" not in codebase.list_files(recursive=True)
+    assert "stamp" not in codebase.search("stamp")
+    with pytest.raises(FileNotFoundError):
+        codebase.read_file(".asb_patch")
+
+
 @pytest.mark.parametrize("code_execution", [False, True])
 def test_path_outside_codebase_is_a_tool_error(tmp_path, code_execution):
     # A plain exception here ended the whole debate run (BL, 26 Nov).
