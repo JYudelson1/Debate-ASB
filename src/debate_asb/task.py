@@ -4,8 +4,15 @@ protocol_task() builds the Task; each protocol module has a small @task
 function that calls it, which is what `inspect eval` runs.
 """
 
+import contextlib
+import hashlib
 import math
+import os
 import shlex
+import sys
+import tarfile
+import tempfile
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import anyio
@@ -18,12 +25,23 @@ from inspect_ai.util import sandbox, store
 
 from debate_asb.artifacts import load_artifacts
 from debate_asb.artifacts.codebase import HIDDEN_NAMES, WORKSPACE
+from debate_asb.datasets.asb import CORRECTED
 from debate_asb.models import check_openrouter_account
 from debate_asb.protocol import AuditSample, Protocol, ToolSet
 
 SANDBOX_COMPOSE = Path(__file__).resolve().parents[2] / "docker" / "compose.yaml"
 # Per-codebase Python environments in the sandbox image, by sample id (docker/build_envs.sh).
 SAMPLE_ENVS = "/opt/envs/by-id"
+
+# A codebase goes into its sandbox as one archive, copied and unpacked by
+# _prepare_workspace: Inspect writes Sample.files one file at a time (about 0.9 s
+# each with Docker Desktop on Windows, so half an hour for a 2,000-file codebase).
+# Inspect's write_file sends the archive base64-encoded, about 3.7 times its size
+# in memory while it runs (1.4 GB for chain_*), so copies take turns across every
+# eval on the machine (COPY_LOCK).
+WORKSPACE_ARCHIVE = "/tmp/workspace.tar.gz"
+ARCHIVE_CACHE = Path(tempfile.gettempdir()) / "debate-asb-workspaces"
+COPY_LOCK = ARCHIVE_CACHE / "copy.lock"
 
 
 def protocol_task(
@@ -68,7 +86,9 @@ def protocol_solver(protocol: Protocol):
             load_artifacts, state.metadata["artifacts"]
         )
         if state.metadata["artifacts"].get("codebase", {}).get("code_execution"):
-            await _prepare_workspace(str(state.sample_id))
+            await _prepare_workspace(
+                Path(state.metadata["workspace_archive"]), str(state.sample_id)
+            )
         sample = AuditSample(
             id=str(state.sample_id),
             epoch=state.epoch,
@@ -218,25 +238,66 @@ def _with_code_execution(sample: Sample) -> Sample:
         **sample.metadata["artifacts"],
         "codebase": {**codebase, "code_execution": True},
     }
-    return sample.model_copy(update={
-        "files": {WORKSPACE: codebase["root"]},  # Inspect copies the directory in
-        "metadata": {**(sample.metadata or {}), "artifacts": artifacts},
-    })  # fmt: skip
+    return sample.model_copy(update={"metadata": {
+        **(sample.metadata or {}),
+        "artifacts": artifacts,
+        "workspace_archive": str(_codebase_archive(Path(codebase["root"]))),
+    }})  # fmt: skip
 
 
-async def _prepare_workspace(sample_id: str) -> None:
-    """Hide what the read-only tools hide, make the codebase read-only for participants,
-    and put the sample's own Python environment first on PATH (docker/build_envs.sh)."""
+def _codebase_archive(root: Path) -> Path:
+    """A gzipped tar of every file under root, built once and cached.
+
+    The cache key is root plus every file's path, size and modification time.
+    Entries are root-owned with mode 644, as Inspect's per-file copy left them.
+    """
+    files = sorted(p for p in root.rglob("*") if p.is_file())
+    key = hashlib.sha256(str(root.resolve()).encode())
+    for p in files:
+        stat = p.stat()
+        key.update(
+            f"\0{p.relative_to(root).as_posix()}\0{stat.st_size}\0{stat.st_mtime_ns}".encode()
+        )
+    name = key.hexdigest()[:24]
+    archive = ARCHIVE_CACHE / f"{name}.tar.gz"
+    if archive.exists():
+        return archive
+    ARCHIVE_CACHE.mkdir(parents=True, exist_ok=True)
+    partial = ARCHIVE_CACHE / f"{name}.{os.getpid()}.partial"
+    with tarfile.open(partial, "w:gz", compresslevel=6, dereference=True) as tar:
+        for p in files:
+            tar.add(p, p.relative_to(root).as_posix(), filter=_owned_by_root)
+    partial.replace(archive)  # a run building it at the same time builds the same
+    return archive
+
+
+def _owned_by_root(info: tarfile.TarInfo) -> tarfile.TarInfo:
+    info.uid = info.gid = 0
+    info.uname = info.gname = "root"
+    info.mode = 0o644
+    return info
+
+
+async def _prepare_workspace(archive: Path, sample_id: str) -> None:
+    """Copy in the codebase's archive and unpack it, hide what the read-only tools hide,
+    make the codebase read-only for participants, and put the sample's own Python
+    environment first on PATH (docker/build_envs.sh)."""
+    async with _machine_lock(COPY_LOCK):
+        contents = await anyio.to_thread.run_sync(archive.read_bytes)
+        await sandbox().write_file(WORKSPACE_ARCHIVE, contents)
+        del contents
     hidden = " ".join(
         f"-name {name!r} -o" for name in sorted(HIDDEN_NAMES)
     ).removesuffix(" -o")
+    # --touch: files get the time they were unpacked, as with Inspect's copy.
+    unpack = (
+        f"tar -xzf {WORKSPACE_ARCHIVE} -C {WORKSPACE} --touch && rm {WORKSPACE_ARCHIVE}"
+    )
+    hide = f"find {WORKSPACE} \\( {hidden} \\) -prune -exec rm -rf {{}} +"
+    # A corrected twin changes only source files, so it uses its shipped twin's lock.
+    env = _use_sample_env(sample_id.removesuffix(CORRECTED))
     result = await sandbox().exec(
-        [
-            "sh",
-            "-c",
-            f"find {WORKSPACE} \\( {hidden} \\) -prune -exec rm -rf {{}} + ; chmod -R a+rX,a-w {WORKSPACE}"
-            + _use_sample_env(sample_id),
-        ],
+        ["sh", "-c", f"{unpack} && {{ {hide} ; chmod -R a+rX,a-w {WORKSPACE}{env}; }}"],
         user="root",
     )
     if not result.success:
@@ -247,6 +308,47 @@ def _use_sample_env(sample_id: str) -> str:
     """Shell that links /opt/venv to the sample's environment, if the image built one."""
     env = shlex.quote(f"{SAMPLE_ENVS}/{sample_id}")
     return f" ; if [ -e {env} ]; then ln -sfn {env} /opt/venv; fi"
+
+
+@contextlib.asynccontextmanager
+async def _machine_lock(path: Path) -> AsyncIterator[None]:
+    """An exclusive lock on `path` for every process on this machine, released if the holder dies."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a+b") as f:
+        while not _try_lock(f.fileno()):
+            await anyio.sleep(0.2)
+        try:
+            yield
+        finally:
+            _unlock(f.fileno())
+
+
+def _try_lock(fd: int) -> bool:
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
+
+
+def _unlock(fd: int) -> None:
+    if sys.platform == "win32":
+        import msvcrt
+
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fd, fcntl.LOCK_UN)
 
 
 def _attach_replayed_stages(

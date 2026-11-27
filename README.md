@@ -177,6 +177,9 @@ experiments" text. Details:
   Modal GPUs and API keys).
 - The image is ~17 GB (13 distinct environments) and builds on first use;
   it needs the ASB codebases fetched (`scripts/fetch_asb.sh`).
+- Each codebase goes into its sandbox as one archive, built on first use and
+  cached in the system temp directory (`debate-asb-workspaces/`, about 1 GB
+  for the core 20; safe to delete).
 - **Idea, not built:** a separate sandbox per participant, so debaters can't
   see or plant each other's scratch files. Inspect supports several
   containers per sample (one service per participant in `docker/compose.yaml`,
