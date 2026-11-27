@@ -11,7 +11,14 @@ from typing import Literal
 
 from inspect_ai.dataset import Sample
 
-from debate_asb.datasets.asb import ASB_ROOT, CORE_SAMPLE_IDS, asb_samples
+from debate_asb.datasets.asb import (
+    ASB_ROOT,
+    CORE_SAMPLE_IDS,
+    CORRECTED_SAMPLE_IDS,
+    LOST_SABOTAGE_SAMPLE_IDS,
+    asb_samples,
+    expand_sample_ids,
+)
 from debate_asb.datasets.monitoringbench import monitoringbench_samples
 
 Dataset = Literal["asb", "monitoringbench"]
@@ -32,7 +39,10 @@ def load_samples(
 __all__ = [
     "ASB_ROOT",
     "CORE_SAMPLE_IDS",
+    "CORRECTED_SAMPLE_IDS",
+    "LOST_SABOTAGE_SAMPLE_IDS",
     "asb_samples",
+    "expand_sample_ids",
     "load_samples",
     "monitoringbench_samples",
 ]

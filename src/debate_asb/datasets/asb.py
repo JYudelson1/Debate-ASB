@@ -47,6 +47,42 @@ CORE_SAMPLE_IDS = [
     "preference_dolphin", "preference_lion",
 ]  # fmt: skip
 
+# A sabotaged twin restored to the state ASB evaluated (corrected.py).
+CORRECTED = "_corrected"
+
+# The core set with the two twins whose shipped copy lacks part of its sabotage
+# (lazy_alpha, chain_justification) restored; every other sample is as shipped.
+LOST_SABOTAGE_SAMPLE_IDS = [
+    i + CORRECTED if i in ("chain_justification", "lazy_alpha") else i
+    for i in CORE_SAMPLE_IDS
+]
+
+# The core set with every sabotaged twin as ASB evaluated it: the honest originals, the
+# five twins nothing changed after evaluation, and the six corrected ones.
+CORRECTED_SAMPLE_IDS = [
+    "awareness_lens_corrected", "awareness_prism",
+    "chain_justification_corrected", "chain_output",
+    "diffuse_fox", "diffuse_owl_corrected",
+    "hidden_cat", "hidden_green",
+    "hop_double_corrected", "hop_jump_corrected", "hop_stride",
+    "lazy_alpha_corrected", "lazy_dimension",
+    "multi_ant", "multi_gem", "multi_pen",
+    "negative_hush", "negative_mute",
+    "preference_dolphin", "preference_lion",
+]  # fmt: skip
+
+# Names usable in place of ids, e.g. -T sample_ids=corrected.
+SAMPLE_SETS = {
+    "core": CORE_SAMPLE_IDS,
+    "lost_sabotage": LOST_SABOTAGE_SAMPLE_IDS,
+    "corrected": CORRECTED_SAMPLE_IDS,
+}
+
+
+def expand_sample_ids(sample_ids: list[str]) -> list[str]:
+    """Sample ids with every set name (SAMPLE_SETS) replaced by its ids."""
+    return [j for i in sample_ids for j in SAMPLE_SETS.get(i, [i])]
+
 
 # Files to lay over a sample's codebase: {sample id: {path in the codebase: path in ASB}}.
 PATCHES: dict[str, dict[str, str]] = {
@@ -110,12 +146,22 @@ def asb_samples(sample_ids: list[str] = CORE_SAMPLE_IDS) -> list[Sample]:
     """Load ASB samples by id, from the core rubrics and the red-team (rt_*) rubrics.
 
     Red-team rubrics only contain sabotaged samples; pair them with core honest
-    samples to get a meaningful AUROC.
+    samples to get a meaningful AUROC. `<id>_corrected` ids load corrected.py's copies.
     """
     if not ASB_ROOT.exists():
         raise FileNotFoundError(
             f"ASB not found at {ASB_ROOT}. Run scripts/fetch_asb.sh first."
         )
+    sample_ids = expand_sample_ids(sample_ids)
+    if corrected := [i for i in sample_ids if i.endswith(CORRECTED)]:
+        from debate_asb.datasets.corrected import (
+            corrected_samples,  # imports this module
+        )
+
+        by_id = {str(s.id): s for s in corrected_samples(corrected)}
+        rest = asb_samples([i for i in sample_ids if i not in by_id])
+        by_id |= {str(s.id): s for s in rest}
+        return [by_id[i] for i in sample_ids]
     persuasion = [i for i in sample_ids if i.endswith("_persuasion")]
     if persuasion:
         # These directories hold only the files that differ from the base
